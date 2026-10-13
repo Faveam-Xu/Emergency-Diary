@@ -42,7 +42,11 @@ import {
   tr,
 } from "./i18n";
 
-import { queryRefugeeData, type RefugeeData } from "./comunicaQuery";
+import {
+  queryRefugeeData,
+  type RefugeeData,
+  type RefugeeDataWithSource,
+} from "./comunicaQuery";
 import { executeCustomQuery, type BuilderItem } from "./customComunicaQuery";
 import {
   Chart as ChartJS,
@@ -727,6 +731,53 @@ setEmergencyData((prev) => ({
         console.warn("Failed to log query view for refugee", g.refugeeWebId, e);
       }
     }
+  }
+
+  function attachGrantsBySource(
+    results: RefugeeDataWithSource[],
+    grants: NgoGrant[],
+  ): EnrichedRefugeeData[] {
+    const grantByFileUrl = new Map<string, NgoGrant>();
+    for (const grant of grants) {
+      grantByFileUrl.set(grant.emergencyFileUrl, grant);
+    }
+
+    const enrichedResults: EnrichedRefugeeData[] = [];
+    for (const result of results) {
+      const grant = grantByFileUrl.get(result.sourceUrl);
+
+      let refugeeWebId = "unknown";
+      if (grant) {
+        refugeeWebId = grant.refugeeWebId;
+      }
+
+      enrichedResults.push({
+        ...result,
+        refugeeWebId: refugeeWebId,
+        emergencyFileUrl: result.sourceUrl,
+      });
+    }
+
+    return enrichedResults;
+  }
+
+  function findGrantsWithoutResults(
+    results: RefugeeDataWithSource[],
+    grants: NgoGrant[],
+  ): NgoGrant[] {
+    const fileUrlsWithResults = new Set<string>();
+    for (const result of results) {
+      fileUrlsWithResults.add(result.sourceUrl);
+    }
+
+    const grantsWithoutResults: NgoGrant[] = [];
+    for (const grant of grants) {
+      if (!fileUrlsWithResults.has(grant.emergencyFileUrl)) {
+        grantsWithoutResults.push(grant);
+      }
+    }
+
+    return grantsWithoutResults;
   }
 
   const [ngoQueryData, setNgoQueryData] = useState<EnrichedRefugeeData[]>([]);
@@ -1535,15 +1586,23 @@ setEmergencyData((prev) => ({
 
       const refugeeData = await queryRefugeeData(emergencyFileUrls, solidFetch);
 
-      const enrichedData = refugeeData.map((data, index) => ({
-        ...data,
-        refugeeWebId: ngoGrants[index % ngoGrants.length].refugeeWebId,
-        emergencyFileUrl: ngoGrants[index % ngoGrants.length].emergencyFileUrl,
-      }));
+      const enrichedData = attachGrantsBySource(refugeeData, ngoGrants);
+      const failedGrants = findGrantsWithoutResults(refugeeData, ngoGrants);
 
       setRawNgoData(enrichedData);
       setIsQueryComplete(true);
-      setNgoStatus("Data fetched. Please apply filters to visualize.");
+
+      if (failedGrants.length > 0) {
+        const failedWebIds: string[] = [];
+        for (const grant of failedGrants) {
+          failedWebIds.push(grant.refugeeWebId);
+        }
+        setNgoStatus(
+          `Data fetched, but ${failedGrants.length} refugee file(s) could not be read: ${failedWebIds.join(", ")}. Please apply filters to visualize.`,
+        );
+      } else {
+        setNgoStatus("Data fetched. Please apply filters to visualize.");
+      }
 
       if (webId) {
         await logViewsForAllGrants(ngoGrants, webId);
@@ -1701,13 +1760,7 @@ setEmergencyData((prev) => ({
         solidFetch,
       );
 
-      const enrichedData = results.map((data, index) => ({
-        ...data,
-        refugeeWebId:
-          ngoGrants[index % ngoGrants.length]?.refugeeWebId || "unknown",
-        emergencyFileUrl:
-          ngoGrants[index % ngoGrants.length]?.emergencyFileUrl || "",
-      }));
+      const enrichedData = attachGrantsBySource(results, ngoGrants);
 
       setNgoQueryData(enrichedData);
 

@@ -1,5 +1,5 @@
 import { QueryEngine } from "@comunica/query-sparql";
-import type { RefugeeData } from "./comunicaQuery";
+import type { RefugeeDataWithSource } from "./comunicaQuery";
 import {
   fetchAndParseOntology,
   expandProperty,
@@ -70,7 +70,7 @@ export async function executeCustomQuery(
   chain: BuilderItem[],
   sources: string[],
   fetch: SolidFetch,
-): Promise<RefugeeData[]> {
+): Promise<RefugeeDataWithSource[]> {
   if (!sources || sources.length === 0) return [];
 
   const mapping = await fetchAndParseOntology();
@@ -291,7 +291,7 @@ OPTIONAL {
 
   console.log("Executing Custom Query:", query);
 
-  const results: RefugeeData[] = [];
+  const results: RefugeeDataWithSource[] = [];
 
   for (const source of sources) {
     try {
@@ -331,6 +331,7 @@ OPTIONAL {
           trauma: binding.get("trauma")?.value,
 healthStatus: binding.get("healthStatus")?.value,
 CaptivityDetail: binding.get("CaptivityDetail")?.value,
+          sourceUrl: source,
         });
       }
     } catch (err) {

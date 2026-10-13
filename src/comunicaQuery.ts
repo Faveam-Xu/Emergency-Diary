@@ -31,6 +31,10 @@ export type RefugeeData = {
   evidenceUrls?: string;
 };
 
+export type RefugeeDataWithSource = RefugeeData & {
+  sourceUrl: string;
+};
+
 export type QueryFilters = {
   country?: string;
   need?: string;
@@ -79,8 +83,8 @@ export async function queryRefugeeData(
   emergencyFileUrls: string[],
   fetch: SolidFetch,
   filters: QueryFilters = {},
-): Promise<RefugeeData[]> {
-  const results: RefugeeData[] = [];
+): Promise<RefugeeDataWithSource[]> {
+  const results: RefugeeDataWithSource[] = [];
   const mapping = await fetchAndParseOntology();
   const prefixes = generateSparqlPrefixes(mapping.prefixes);
 
@@ -247,7 +251,11 @@ OPTIONAL {
       );
 
       if (fileResults.length > 0) {
-        results.push(fileResults[0]);
+        const resultWithSource: RefugeeDataWithSource = {
+          ...fileResults[0],
+          sourceUrl: source,
+        };
+        results.push(resultWithSource);
       }
     } catch (err) {
       console.error(`Error querying file ${source}:`, err);
