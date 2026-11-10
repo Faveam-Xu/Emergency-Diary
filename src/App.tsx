@@ -20,8 +20,6 @@ import {
   getUrl,
   getUrlAll,
   getStringNoLocale,
-  createSolidDataset,
-  saveSolidDatasetAt,
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
@@ -30,7 +28,7 @@ import {
   grantAccessToSelectedNGOs,
   revokeAccessFromSelectedNGOs,
   ensurePrivateContainer,
-  secureNgoInbox,
+  ensureSecureNgoInbox,
 } from "./accessControl";
 
 import { COUNTRIES } from "./countries";
@@ -1029,6 +1027,27 @@ setEmergencyData((prev) => ({
     })();
   }, [webId]);
 
+  // Auto-check and repair the NGO inbox ACL on every NGO login, instead of
+  // relying solely on the "Initialise NGO inbox" button - an inbox created
+  // (or tampered with) under an older, public-write ACL would otherwise stay
+  // insecure until someone happens to click that button again.
+  useEffect(() => {
+    (async () => {
+      if (!loggedIn || role !== "ngo" || !podBaseUrl || !webId) return;
+
+      const base = podBaseUrl.endsWith("/")
+        ? podBaseUrl.slice(0, -1)
+        : podBaseUrl;
+      const indexUrl = `${base}/public/refugeesGranted.ttl`;
+
+      try {
+        await ensureSecureNgoInbox(indexUrl, webId);
+      } catch (err) {
+        console.warn("Error auto-securing NGO inbox", err);
+      }
+    })();
+  }, [loggedIn, role, podBaseUrl, webId]);
+
   async function onLogin() {
     await login();
   }
@@ -1497,6 +1516,11 @@ setEmergencyData((prev) => ({
       return;
     }
 
+    if (!webId) {
+      setNgoStatus("Missing WebID, cannot secure inbox.");
+      return;
+    }
+
     const base = podBaseUrl.endsWith("/")
       ? podBaseUrl.slice(0, -1)
       : podBaseUrl;
@@ -1505,26 +1529,17 @@ setEmergencyData((prev) => ({
     try {
       setNgoStatus("Checking inbox status...");
 
-      try {
-        await getSolidDataset(indexUrl, { fetch: solidFetch });
-        setNgoStatus("NGO inbox already initialised!");
-        return;
-      } catch {
-        // File does NOT exist – continue to create it
-      }
+      // Always (re)apply the secure ACL, even if the inbox file already
+      // existed - an inbox created by older code (or tampered with while an
+      // old public ACL was in effect) must have its permissions corrected,
+      // not just newly-created ones.
+      const { created } = await ensureSecureNgoInbox(indexUrl, webId);
 
-      setNgoStatus("Initialising NGO inbox...");
-
-      const emptyDataset = createSolidDataset();
-
-      await saveSolidDatasetAt(indexUrl, emptyDataset, {
-        fetch: solidFetch,
-      });
-
-      if (!webId) throw new Error("Missing WebID, cannot secure inbox.");
-      await secureNgoInbox(indexUrl, webId);
-
-      setNgoStatus("NGO inbox initialised successfully.");
+      setNgoStatus(
+        created
+          ? "NGO inbox initialised successfully."
+          : "NGO inbox already existed; access permissions have been re-secured.",
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setNgoStatus(`Error initialising NGO inbox: ${msg}`);
@@ -1568,28 +1583,40 @@ setEmergencyData((prev) => ({
         emergencyFileUrl?: string;
       };
 
+      // Old-format entries and garbage triples written while the inbox had
+      // a public write ACL (anything from a stray `<#x> <#y> "..."` to a
+      // thing that merely looks like a grant/revocation but has fields of
+      // the wrong shape) must be skipped individually rather than aborting
+      // the whole load, so one bad entry can't hide every legitimate grant.
       const events: GrantEvent[] = things
         .map((t): GrantEvent | null => {
-          const refugeeWebId = getUrl(t, `${EX}refugee`);
-          if (!refugeeWebId) return null;
+          try {
+            const refugeeWebId = getUrl(t, `${EX}refugee`);
+            if (!refugeeWebId) return null;
 
-          const type = getUrl(t, RDF_TYPE);
-          if (type === `${EX}Grant`) {
-            return {
-              refugeeWebId,
-              kind: "grant",
-              at: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
-              emergencyFileUrl: getUrl(t, `${EX}emergencyFile`) ?? "",
-            };
+            const type = getUrl(t, RDF_TYPE);
+            if (type === `${EX}Grant`) {
+              const emergencyFileUrl = getUrl(t, `${EX}emergencyFile`);
+              if (!emergencyFileUrl) return null;
+              return {
+                refugeeWebId,
+                kind: "grant",
+                at: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
+                emergencyFileUrl,
+              };
+            }
+            if (type === `${EX}Revocation`) {
+              return {
+                refugeeWebId,
+                kind: "revoke",
+                at: getStringNoLocale(t, `${EX}revokedAt`) ?? "",
+              };
+            }
+            return null;
+          } catch (err) {
+            console.warn("Skipping malformed NGO inbox entry", err);
+            return null;
           }
-          if (type === `${EX}Revocation`) {
-            return {
-              refugeeWebId,
-              kind: "revoke",
-              at: getStringNoLocale(t, `${EX}revokedAt`) ?? "",
-            };
-          }
-          return null;
         })
         .filter((e): e is GrantEvent => e !== null);
 

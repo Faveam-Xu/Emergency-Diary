@@ -42,6 +42,7 @@ const ACL = {
   Append: "http://www.w3.org/ns/auth/acl#Append",
   Control: "http://www.w3.org/ns/auth/acl#Control",
 };
+const FOAF_AGENT = "http://xmlns.com/foaf/0.1/Agent";
 
 function ensureSlash(base: string): string {
   return base.endsWith("/") ? base : base + "/";
@@ -180,33 +181,121 @@ export async function ensurePrivateContainer(
 }
 
 /**
+ * Finds the URL of a resource's ACL document via its `Link: rel="acl"`
+ * response header, rather than guessing a `.acl` suffix.
+ */
+async function getAclUrlForResource(resourceUrl: string): Promise<string> {
+  const response = await solidFetch(resourceUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Could not fetch ${resourceUrl} to locate its ACL: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const linkHeader = response.headers.get("link");
+  if (!linkHeader) {
+    throw new Error(`No Link header on ${resourceUrl}; cannot locate its ACL.`);
+  }
+
+  const aclLinkPart = linkHeader
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => /rel\s*=\s*"?acl"?/.test(part));
+  const urlMatch = aclLinkPart?.match(/<([^>]*)>/);
+  if (!urlMatch) {
+    throw new Error(
+      `No rel="acl" Link header on ${resourceUrl}; cannot locate its ACL.`,
+    );
+  }
+
+  return new URL(urlMatch[1], resourceUrl).toString();
+}
+
+/**
  * Locks the NGO inbox down so any logged-in user may only append new grant
  * or revocation entries, and only the NGO itself can read or overwrite it
- * (PR0-1). Replaces the previous world-readable/writable ACL.
+ * (PR0-1).
+ *
+ * This issues a raw HTTP PUT that replaces the ACL resource's entire body,
+ * rather than going through solid-client's createAcl()/saveAclFor(). Those
+ * build an ACL dataset whose source IRI already matches the ACL resource, so
+ * solid-client saves it as a changelog-only PATCH (INSERT of the new rules
+ * only) instead of a full PUT - which merges the new owner/AuthenticatedAgent
+ * rules into whatever public rules are already on the server rather than
+ * replacing them. A PUT of a complete Turtle document is the only way to
+ * guarantee any pre-existing foaf:Agent / acl:default rules left over from
+ * an older, public ACL are actually gone, not just added to.
  */
 export async function secureNgoInbox(
   indexUrl: string,
   ownerWebId: string,
 ): Promise<void> {
-  const resourceInfo = await loadAccessibleResource(indexUrl);
-  let aclDataset = createAcl(resourceInfo);
+  const aclUrl = await getAclUrlForResource(indexUrl);
 
-  aclDataset = setThing(
-    aclDataset,
-    buildAuthorization("owner", indexUrl, {
-      agent: ownerWebId,
-      modes: [ACL.Read, ACL.Write, ACL.Control],
-    }),
-  );
-  aclDataset = setThing(
-    aclDataset,
-    buildAuthorization("loggedInAppendOnly", indexUrl, {
-      agentClass: ACL.AuthenticatedAgent,
-      modes: [ACL.Append],
-    }),
-  );
+  const turtle = `@prefix acl: <http://www.w3.org/ns/auth/acl#>.
 
-  await saveAclFor(resourceInfo, aclDataset, { fetch: solidFetch });
+<#owner>
+    a acl:Authorization;
+    acl:accessTo <${indexUrl}>;
+    acl:agent <${ownerWebId}>;
+    acl:mode acl:Read, acl:Write, acl:Control.
+
+<#loggedInAppendOnly>
+    a acl:Authorization;
+    acl:accessTo <${indexUrl}>;
+    acl:agentClass acl:AuthenticatedAgent;
+    acl:mode acl:Append.
+`;
+
+  const putResponse = await solidFetch(aclUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "text/turtle" },
+    body: turtle,
+  });
+  if (!putResponse.ok) {
+    throw new Error(
+      `Failed to overwrite ACL at ${aclUrl}: ${putResponse.status} ${putResponse.statusText}`,
+    );
+  }
+
+  const verifyResponse = await solidFetch(aclUrl);
+  if (!verifyResponse.ok) {
+    throw new Error(
+      `Could not re-read ACL at ${aclUrl} to verify it after overwriting it: ${verifyResponse.status} ${verifyResponse.statusText}`,
+    );
+  }
+  const verifyBody = await verifyResponse.text();
+  if (verifyBody.includes(FOAF_AGENT)) {
+    throw new Error(
+      `ACL at ${aclUrl} still grants access to foaf:Agent after being overwritten; refusing to report the inbox as secured.`,
+    );
+  }
+}
+
+/**
+ * Ensures the NGO inbox file exists and always (re)applies the secure ACL
+ * from `secureNgoInbox`, regardless of whether the file already existed.
+ * Inboxes created by older versions of this app (or tampered with while an
+ * old public read/write ACL was in effect) must have their ACL overwritten
+ * too, not just newly-created ones - `secureNgoInbox` builds a brand new ACL
+ * dataset from scratch, so this always strips any lingering public/foaf:Agent
+ * rule along the way.
+ */
+export async function ensureSecureNgoInbox(
+  indexUrl: string,
+  ownerWebId: string,
+): Promise<{ created: boolean }> {
+  let created = false;
+  try {
+    await getSolidDataset(indexUrl, { fetch: solidFetch });
+  } catch {
+    const emptyDataset = createSolidDataset();
+    await saveSolidDatasetAt(indexUrl, emptyDataset, { fetch: solidFetch });
+    created = true;
+  }
+
+  await secureNgoInbox(indexUrl, ownerWebId);
+  return { created };
 }
 
 /**
