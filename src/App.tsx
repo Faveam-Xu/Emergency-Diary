@@ -25,10 +25,12 @@ import {
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
-import { getEmergencyAccess, makeEmergencyPrivate } from "./accessControl";
+import { getEmergencyAccess } from "./accessControl";
 import {
   grantAccessToSelectedNGOs,
   revokeAccessFromSelectedNGOs,
+  ensurePrivateContainer,
+  secureNgoInbox,
 } from "./accessControl";
 
 import { COUNTRIES } from "./countries";
@@ -352,7 +354,7 @@ function generateId(prefix: string): string {
 }
 
 function getPodBaseFromEmergencyUrl(emergencyFileUrl: string): string | null {
-  const marker = "/public/emergency.ttl";
+  const marker = "/private/emergency.ttl";
   const index = emergencyFileUrl.indexOf(marker);
   if (index === -1) return null;
 
@@ -467,6 +469,36 @@ function requestGPS(): Promise<GeolocationCoordinates> {
       (err) => reject(err)
     );
   });
+}
+
+// Re-encoding a photo through a canvas drops its original byte stream -
+// including EXIF/GPS tags - keeping only the pixel data (Section 2.1.2).
+async function stripImageMetadata(file: File): Promise<Blob> {
+  if (!file.type.startsWith("image/")) {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    ctx.drawImage(bitmap, 0, 0);
+
+    const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob(resolve, outputType, 0.92),
+    );
+
+    return blob ?? file;
+  } catch (e) {
+    console.warn("Could not strip image metadata, uploading as-is:", e);
+    return file;
+  }
 }
 
 export default function App() {
@@ -879,13 +911,6 @@ setEmergencyData((prev) => ({
   const [ngoViewMap, setNgoViewMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-  // Use 'loggedIn' (the state variable defined on line 719), 
-  // NOT 'isLoggedIn' (the function imported on line 4).
-  if (loggedIn && role === "refugee") {
-    handleGetGPS();
-  }
-}, [loggedIn, role]);
-  useEffect(() => {
     (async () => {
       await Promise.all([initSession(), loadOntology()]);
       const ok = isLoggedIn();
@@ -939,8 +964,8 @@ setEmergencyData((prev) => ({
       if (!podBaseUrl || allNgos.length === 0) return;
 
       const emergencyFileUrl = podBaseUrl.endsWith("/")
-        ? podBaseUrl + "public/emergency.ttl"
-        : podBaseUrl + "/public/emergency.ttl";
+        ? podBaseUrl + "private/emergency.ttl"
+        : podBaseUrl + "/private/emergency.ttl";
 
       try {
         const accessMap: Record<string, boolean> = {};
@@ -970,14 +995,15 @@ setEmergencyData((prev) => ({
 
   useEffect(() => {
     (async () => {
-      if (!podBaseUrl) return;
+      if (!podBaseUrl || !webId) return;
       try {
+        await ensurePrivateContainer(podBaseUrl, webId);
         await saveNgoList(podBaseUrl, allNgos);
       } catch (err) {
         console.warn("Error while saving NGO list", err);
       }
     })();
-  }, [allNgos, podBaseUrl]);
+  }, [allNgos, podBaseUrl, webId]);
 
   useEffect(() => {
     (async () => {
@@ -1067,15 +1093,17 @@ setEmergencyData((prev) => ({
     if (!webId) throw new Error("Missing WebID, cannot upload evidence.");
 
     const podBase = getPodBaseFromWebId(webId);
-    const folderUrl = `${podBase}public/evidence/`;
+    await ensurePrivateContainer(podBase, webId);
+
+    const folderUrl = `${podBase}private/evidence/`;
     const fileName = `${Date.now()}-${file.name}`;
     const fileUrl = `${folderUrl}${encodeURIComponent(fileName)}`;
 
-    const arrayBuffer = await file.arrayBuffer();
+    const cleaned = await stripImageMetadata(file);
     const response = await solidFetch(fileUrl, {
       method: "PUT",
       headers: { "Content-Type": file.type || "application/octet-stream" },
-      body: new Uint8Array(arrayBuffer),
+      body: cleaned,
     });
 
     if (!response.ok) {
@@ -1223,8 +1251,10 @@ setEmergencyData((prev) => ({
 
     try {
       setStatus(dashboardTexts.saving);
+      if (webId) {
+        await ensurePrivateContainer(podBaseUrl, webId);
+      }
       const url = await saveEmergencyData(podBaseUrl, toEmergencyData());
-      await makeEmergencyPrivate(podBaseUrl);
       setIsPublic(false);
 
       setStatus(`${dashboardTexts.savedPrivate}: ${url}`);
@@ -1239,7 +1269,7 @@ setEmergencyData((prev) => ({
   async function handlePreviewRdf() {
     try {
       setStatus("fetching rdf…");
-      const res = await solidFetch(`${podBaseUrl}public/emergency.ttl`);
+      const res = await solidFetch(`${podBaseUrl}private/emergency.ttl`);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const txt = await res.text();
       setRawRdf(txt);
@@ -1316,8 +1346,8 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.grantingAccess);
 
     const emergencyFileUrl = podBaseUrl.endsWith("/")
-      ? podBaseUrl + "public/emergency.ttl"
-      : podBaseUrl + "/public/emergency.ttl";
+      ? podBaseUrl + "private/emergency.ttl"
+      : podBaseUrl + "/private/emergency.ttl";
 
     try {
       await grantAccessToSelectedNGOs(
@@ -1398,8 +1428,8 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.revokingAccess);
 
     const emergencyFileUrl = podBaseUrl.endsWith("/")
-      ? podBaseUrl + "public/emergency.ttl"
-      : podBaseUrl + "/public/emergency.ttl";
+      ? podBaseUrl + "private/emergency.ttl"
+      : podBaseUrl + "/private/emergency.ttl";
 
     try {
       await revokeAccessFromSelectedNGOs(trustedNgos, podBaseUrl, webId);
@@ -1491,11 +1521,8 @@ setEmergencyData((prev) => ({
         fetch: solidFetch,
       });
 
-      await universalAccess.setPublicAccess(
-        indexUrl,
-        { read: true, append: true, write: true },
-        { fetch: solidFetch },
-      );
+      if (!webId) throw new Error("Missing WebID, cannot secure inbox.");
+      await secureNgoInbox(indexUrl, webId);
 
       setNgoStatus("NGO inbox initialised successfully.");
     } catch (e) {
@@ -1531,14 +1558,56 @@ setEmergencyData((prev) => ({
       const dataset = await getSolidDataset(indexUrl, { fetch: solidFetch });
       const things = getThingAll(dataset);
 
-      const grants: NgoGrant[] = things
-        .filter((t) => getUrl(t, RDF_TYPE) === `${EX}Grant`)
-        .map((t) => ({
-          refugeeWebId: t.url,
-          emergencyFileUrl: getUrl(t, `${EX}emergencyFile`) ?? "",
-          grantedAt: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
-        }))
-        .filter((g) => g.refugeeWebId && g.emergencyFileUrl);
+      // The inbox is an append-only event log (PR0-1): each grant or
+      // revocation is its own entry pointing at the refugee via ex:refugee,
+      // so we resolve, per refugee, whichever event happened most recently.
+      type GrantEvent = {
+        refugeeWebId: string;
+        kind: "grant" | "revoke";
+        at: string;
+        emergencyFileUrl?: string;
+      };
+
+      const events: GrantEvent[] = things
+        .map((t): GrantEvent | null => {
+          const refugeeWebId = getUrl(t, `${EX}refugee`);
+          if (!refugeeWebId) return null;
+
+          const type = getUrl(t, RDF_TYPE);
+          if (type === `${EX}Grant`) {
+            return {
+              refugeeWebId,
+              kind: "grant",
+              at: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
+              emergencyFileUrl: getUrl(t, `${EX}emergencyFile`) ?? "",
+            };
+          }
+          if (type === `${EX}Revocation`) {
+            return {
+              refugeeWebId,
+              kind: "revoke",
+              at: getStringNoLocale(t, `${EX}revokedAt`) ?? "",
+            };
+          }
+          return null;
+        })
+        .filter((e): e is GrantEvent => e !== null);
+
+      const latestByRefugee = new Map<string, GrantEvent>();
+      for (const event of events) {
+        const current = latestByRefugee.get(event.refugeeWebId);
+        if (!current || event.at > current.at) {
+          latestByRefugee.set(event.refugeeWebId, event);
+        }
+      }
+
+      const grants: NgoGrant[] = Array.from(latestByRefugee.values())
+        .filter((e) => e.kind === "grant" && e.emergencyFileUrl)
+        .map((e) => ({
+          refugeeWebId: e.refugeeWebId,
+          emergencyFileUrl: e.emergencyFileUrl as string,
+          grantedAt: e.at,
+        }));
 
       if (!grants.length) {
         setNgoStatus("No refugees have granted you access yet.");

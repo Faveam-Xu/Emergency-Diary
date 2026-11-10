@@ -5,8 +5,8 @@ import SHACLValidator from "rdf-validate-shacl";
 import { runReasoning } from "./reasoner";
 import type { DatasetCore } from "@rdfjs/types";
 
-const EMERGENCY_FILE = "public/emergency.ttl";
-const NGO_LIST_FILE = "public/ngoList.ttl";
+const EMERGENCY_FILE = "private/emergency.ttl";
+const NGO_LIST_FILE = "private/ngoList.ttl";
 
 const EX = "http://example.org/ns#";
 const EVIDENCE_URLS_PRED = $rdf.sym(EX + "evidenceUrls");
