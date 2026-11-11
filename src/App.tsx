@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, CSSProperties } from "react";
 
 import { initSession, login, logout, isLoggedIn, getWebId } from "./auth";
 import {
@@ -7,6 +7,8 @@ import {
   loadEmergencyData,
   saveNgoList,
   loadNgoList,
+  ensureEvidenceUrlsPresent,
+  mergeEvidenceUrls,
 } from "./solidDatanew";
 import { loadOntology, getOntologyStore } from "./cdmnew";
 import type { EmergencyData } from "./solidDatanew";
@@ -30,6 +32,8 @@ import {
   ensurePrivateContainer,
   ensureSecureNgoInbox,
 } from "./accessControl";
+import { stripImageMetadata, randomEvidenceFileName } from "./imageUtils";
+import { migrateLegacyPublicData } from "./migrateLegacyData";
 
 import { COUNTRIES } from "./countries";
 import { NATIONALITIES } from "./nationalities";
@@ -469,34 +473,63 @@ function requestGPS(): Promise<GeolocationCoordinates> {
   });
 }
 
-// Re-encoding a photo through a canvas drops its original byte stream -
-// including EXIF/GPS tags - keeping only the pixel data (Section 2.1.2).
-async function stripImageMetadata(file: File): Promise<Blob> {
-  if (!file.type.startsWith("image/")) {
-    return file;
-  }
+// Evidence photos are stored privately (PR0-2), so a plain <img src="..."> is
+// unauthenticated and gets a 401. Fetch the bytes with the logged-in session's
+// fetch instead and display them via a local blob URL, revoked on unmount/
+// URL change so we don't leak object URLs.
+function PrivateImage({
+  url,
+  alt,
+  style,
+}: {
+  url: string;
+  alt: string;
+  style?: CSSProperties;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  try {
-    const bitmap = await createImageBitmap(file);
-    const canvas = document.createElement("canvas");
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
+  useEffect(() => {
+    let localObjectUrl: string | null = null;
+    let cancelled = false;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
+    (async () => {
+      setFailed(false);
+      setObjectUrl(null);
+      try {
+        const response = await solidFetch(url);
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        if (cancelled) return;
+        localObjectUrl = URL.createObjectURL(blob);
+        setObjectUrl(localObjectUrl);
+      } catch (e) {
+        console.warn("Could not load private evidence photo", url, e);
+        if (!cancelled) setFailed(true);
+      }
+    })();
 
-    ctx.drawImage(bitmap, 0, 0);
+    return () => {
+      cancelled = true;
+      if (localObjectUrl) URL.revokeObjectURL(localObjectUrl);
+    };
+  }, [url]);
 
-    const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, outputType, 0.92),
+  if (failed) {
+    return (
+      <span style={{ fontSize: 12, color: "#999", ...style }}>
+        Image unavailable
+      </span>
     );
-
-    return blob ?? file;
-  } catch (e) {
-    console.warn("Could not strip image metadata, uploading as-is:", e);
-    return file;
   }
+  if (!objectUrl) {
+    return (
+      <span style={{ fontSize: 12, color: "#999", ...style }}>Loading…</span>
+    );
+  }
+  return <img src={objectUrl} alt={alt} style={style} />;
 }
 
 export default function App() {
@@ -922,6 +955,25 @@ setEmergencyData((prev) => ({
     if (!podBaseUrl) return;
 
     (async () => {
+      // One-time migration (PR0-2) for refugees who saved data under the
+      // pre-fix public/ layout: move it to private/ before loading anything,
+      // so the loads below pick up the migrated copy. Safe to run on every
+      // login - it's a no-op once nothing is left under public/.
+      let migrationMessage = "";
+      if (role === "refugee" && webId) {
+        try {
+          const migration = await migrateLegacyPublicData(
+            podBaseUrl,
+            webId,
+            allNgos,
+            language,
+          );
+          migrationMessage = migration.message;
+        } catch (err) {
+          console.error("Error migrating legacy public data", err);
+        }
+      }
+
       try {
         const ngos = await loadNgoList(podBaseUrl);
         if (ngos && ngos.length > 0) {
@@ -953,6 +1005,12 @@ setEmergencyData((prev) => ({
         }
       } catch (err) {
         console.error("Error loading NGO list", err);
+      }
+
+      // Surface the migration result last, so it isn't immediately
+      // overwritten by the "data loaded" status set above.
+      if (migrationMessage) {
+        setStatus(migrationMessage);
       }
     })();
   }, [podBaseUrl]);
@@ -1115,13 +1173,14 @@ setEmergencyData((prev) => ({
     await ensurePrivateContainer(podBase, webId);
 
     const folderUrl = `${podBase}private/evidence/`;
-    const fileName = `${Date.now()}-${file.name}`;
-    const fileUrl = `${folderUrl}${encodeURIComponent(fileName)}`;
-
     const cleaned = await stripImageMetadata(file);
+    const contentType = file.type || "image/jpeg";
+    const fileName = randomEvidenceFileName(contentType);
+    const fileUrl = `${folderUrl}${fileName}`;
+
     const response = await solidFetch(fileUrl, {
       method: "PUT",
-      headers: { "Content-Type": file.type || "application/octet-stream" },
+      headers: { "Content-Type": contentType },
       body: cleaned,
     });
 
@@ -1130,6 +1189,12 @@ setEmergencyData((prev) => ({
         `Failed to upload evidence file: ${response.status} ${response.statusText}`,
       );
     }
+
+    // Record the new photo in the Pod record immediately - otherwise it
+    // only exists in React state, and is orphaned (referenced by nothing)
+    // the moment the user refreshes or closes the page without clicking
+    // Save.
+    await ensureEvidenceUrlsPresent(podBase, [fileUrl]);
 
     return fileUrl;
   };
@@ -1273,7 +1338,25 @@ setEmergencyData((prev) => ({
       if (webId) {
         await ensurePrivateContainer(podBaseUrl, webId);
       }
-      const url = await saveEmergencyData(podBaseUrl, toEmergencyData());
+
+      const data = toEmergencyData();
+      // Merge with whatever evidenceUrls are already on the Pod rather than
+      // overwriting them with this session's (possibly stale/incomplete)
+      // React state - uploads and migration write straight to the Pod and
+      // may know about photos this form never loaded.
+      try {
+        const persisted = await loadEmergencyData(podBaseUrl);
+        if (persisted) {
+          data.evidenceUrls = mergeEvidenceUrls(
+            persisted.evidenceUrls,
+            evidenceUrls,
+          );
+        }
+      } catch (err) {
+        console.warn("Could not read persisted evidenceUrls before save", err);
+      }
+
+      const url = await saveEmergencyData(podBaseUrl, data);
       setIsPublic(false);
 
       setStatus(`${dashboardTexts.savedPrivate}: ${url}`);
@@ -2998,9 +3081,9 @@ setEmergencyData((prev) => ({
                         }}
                       >
                         {evidenceUrls.map((url) => (
-                          <img
+                          <PrivateImage
                             key={url}
-                            src={url}
+                            url={url}
                             alt="Uploaded evidence"
                             style={{
                               maxWidth: 120,

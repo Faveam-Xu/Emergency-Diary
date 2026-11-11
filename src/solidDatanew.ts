@@ -225,8 +225,17 @@ export async function saveEmergencyData(
 export async function loadEmergencyData(
   podBaseUrl: string,
 ): Promise<EmergencyData | null> {
-  const fileUrl = `${podBaseUrl}${EMERGENCY_FILE}`;
+  return loadEmergencyDataFromUrl(`${podBaseUrl}${EMERGENCY_FILE}`);
+}
 
+// Reads the same emergency-record shape from an arbitrary file URL, so
+// callers migrating data away from an older location (e.g. a legacy
+// `public/emergency.ttl`) can parse it before it is rewritten under its new,
+// private URL (the record's internal node IRIs are rooted at `fileUrl`, so
+// they must match where the data is actually being read from).
+export async function loadEmergencyDataFromUrl(
+  fileUrl: string,
+): Promise<EmergencyData | null> {
   let ttlContent: string;
   try {
     const response = await solidFetch(fileUrl);
@@ -389,7 +398,15 @@ export async function saveNgoList(
 export async function loadNgoList(
   podBaseUrl: string,
 ): Promise<string[] | null> {
-  const fileUrl = `${podBaseUrl}${NGO_LIST_FILE}`;
+  return loadNgoListFromUrl(`${podBaseUrl}${NGO_LIST_FILE}`);
+}
+
+// Same as `loadNgoList`, but for an arbitrary file URL - lets migration code
+// read a legacy `public/ngoList.ttl` using its own (old) URL as the base IRI,
+// which is what its internal `#ngoList` node is actually rooted at.
+export async function loadNgoListFromUrl(
+  fileUrl: string,
+): Promise<string[] | null> {
   let ttlContent: string;
   try {
     const response = await solidFetch(fileUrl);
@@ -415,4 +432,93 @@ export async function loadNgoList(
   const ngos = store.each(listNode, HAS_NGO, null).map((ngo) => ngo.value);
 
   return ngos;
+}
+
+function parseEvidenceUrls(value: string): string[] {
+  return value
+    .split(";")
+    .map((u) => u.trim())
+    .filter(Boolean);
+}
+
+// Pure merge so callers (upload, migration, the form's Save button) can
+// combine whatever is already on the Pod with whatever they themselves know
+// about, without ever dropping a URL neither side mentioned.
+export function mergeEvidenceUrls(
+  existing: string,
+  additional: string[],
+): string {
+  const merged = Array.from(
+    new Set([...parseEvidenceUrls(existing), ...additional.filter(Boolean)]),
+  );
+  return merged.join("; ");
+}
+
+function emptyEmergencyData(): EmergencyData {
+  return {
+    recordId: "",
+    recordDate: "",
+    victimId: "",
+    victimCategory: "",
+    numberOfVictims: "",
+    nationality: "",
+    victimGender: "",
+    victimAge: "",
+    groupNationalities: "",
+    groupGenders: "",
+    groupAges: "",
+    country: "",
+    state: "",
+    town: "",
+    village: "",
+    latitude: "",
+    longitude: "",
+    locationId: "",
+    locationName: "",
+    locationType: "",
+    situationDescription: "",
+    accommodation: "",
+    accommodationNeeds: "",
+    needsDescription: "",
+    captivityStatus: "",
+    helpReasons: "",
+    extraInfo: "",
+    contactPhoneSelf: "",
+    contactPhoneTrusted: "",
+    contactMessenger: "",
+    contactOtherHandles: "",
+    contactRequest: "",
+    gps: "",
+    evidenceUrls: "",
+    trauma: "",
+    CaptivityDetail: "",
+    healthStatus: "",
+  };
+}
+
+/**
+ * Ensures every URL in `urlsToKeep` ends up in the record's evidenceUrls,
+ * without touching any existing entry that isn't in `dropUrls` - so an
+ * upload or a migration step can never clobber evidence links a user
+ * hasn't saved over themselves (merge, not replace). Creates a minimal
+ * record if none exists yet, rather than silently dropping the URLs.
+ */
+export async function ensureEvidenceUrlsPresent(
+  podBaseUrl: string,
+  urlsToKeep: string[],
+  dropUrls: string[] = [],
+): Promise<void> {
+  const existing = await loadEmergencyData(podBaseUrl);
+  const base = existing ?? emptyEmergencyData();
+
+  const survivors = parseEvidenceUrls(base.evidenceUrls).filter(
+    (u) => !dropUrls.includes(u),
+  );
+  const mergedStr = mergeEvidenceUrls(survivors.join("; "), urlsToKeep);
+
+  if (mergedStr === base.evidenceUrls) {
+    return;
+  }
+
+  await saveEmergencyData(podBaseUrl, { ...base, evidenceUrls: mergedStr });
 }
