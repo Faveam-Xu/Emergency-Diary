@@ -3,7 +3,9 @@ import { solidFetch } from "./auth";
 import { CDM, getOntologyStore } from "./cdmnew";
 import SHACLValidator from "rdf-validate-shacl";
 import { runReasoning } from "./reasoner";
-import type { DatasetCore } from "@rdfjs/types";
+import datasetFactory from "@rdfjs/dataset";
+import dataFactory from "@rdfjs/data-model";
+import type { BlankNode, Quad_Object } from "@rdfjs/types";
 
 const EMERGENCY_FILE = "public/emergency.ttl";
 const NGO_LIST_FILE = "public/ngoList.ttl";
@@ -80,48 +82,112 @@ function addMultiValueIf(
   }
 }
 
-async function validateData(store: $rdf.IndexedFormula): Promise<void> {
-  try {
-    const response = await fetch("/shapes.ttl");
-    if (!response.ok) {
-      console.warn("Could not load shapes.ttl for validation");
-      return;
-    }
-    const shapesText = await response.text();
-    const shapesStore = $rdf.graph();
-
-    try {
-      $rdf.parse(
-        shapesText,
-        shapesStore,
-        window.location.origin + "/shapes.ttl",
-        "text/turtle",
-      );
-    } catch (e) {
-      console.error("Failed to parse shapes.ttl", e);
-      return;
-    }
-
-    const shapesDataset = shapesStore.statements as unknown as DatasetCore;
-    const dataDataset = store.statements as unknown as DatasetCore;
-
-    const validator = new SHACLValidator(shapesDataset);
-    const report = await validator.validate(dataDataset);
-
-    if (!report.conforms) {
-      console.error("SHACL Validation Report:", report);
-      let msg = "Validation failed:\n";
-      for (const result of report.results) {
-        msg += `- ${result.message}\n`;
+// Rebuild rdflib statements as RDF/JS quads in the default graph. Both the
+// data and shapes are graphs; rdflib's parser document graph is not data here.
+function toDataset(store: $rdf.IndexedFormula) {
+  const dataset = datasetFactory.dataset();
+  const blankNodes = new Map<string, BlankNode>();
+  const rdfFirst = dataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#first");
+  const rdfRest = dataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest");
+  const rdfNil = dataFactory.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil");
+  function convert(term: $rdf.Node): Quad_Object {
+    switch (term.termType) {
+      case "NamedNode": return dataFactory.namedNode(term.value);
+      case "BlankNode": {
+        let node = blankNodes.get(term.value);
+        if (!node) {
+          node = dataFactory.blankNode();
+          blankNodes.set(term.value, node);
+        }
+        return node;
       }
-      throw new Error(msg);
+      case "Literal": {
+        if (!$rdf.isLiteral(term)) throw new Error("Invalid RDF literal.");
+        return dataFactory.literal(term.value,
+          term.language || dataFactory.namedNode(term.datatype.value));
+      }
+      case "Collection": {
+        if (!$rdf.isCollection(term)) throw new Error("Invalid RDF collection.");
+        // rdflib uses Collection terms for Turtle lists; SHACL sh:in needs
+        // standard RDF first/rest quads instead.
+        let head: Quad_Object = rdfNil;
+        for (const item of [...term.elements].reverse()) {
+          const node = dataFactory.blankNode();
+          dataset.add(dataFactory.quad(node, rdfFirst, convert(item)));
+          dataset.add(dataFactory.quad(node, rdfRest, head));
+          head = node;
+        }
+        return head;
+      }
+      default: throw new Error(`Unsupported RDF term: ${term.termType}`);
     }
-    console.log("SHACL Validation passed");
+  }
+  for (const statement of store.statements) {
+    const subject = convert(statement.subject);
+    if (subject.termType !== "NamedNode" && subject.termType !== "BlankNode") {
+      throw new Error("Invalid RDF subject.");
+    }
+    dataset.add(dataFactory.quad(subject,
+      dataFactory.namedNode(statement.predicate.value), convert(statement.object)));
+  }
+  return dataset;
+}
+
+async function validateData(store: $rdf.IndexedFormula): Promise<void> {
+  const response = await fetch("/shapes.ttl");
+  if (!response.ok) {
+    throw new Error(`Could not load SHACL shapes: ${response.status} ${response.statusText}`);
+  }
+  const shapesText = await response.text();
+  const shapesStore = $rdf.graph();
+  try {
+    $rdf.parse(shapesText, shapesStore, window.location.origin + "/shapes.ttl", "text/turtle");
   } catch (error) {
-    if ((error as Error).message.startsWith("Validation failed")) {
-      throw error;
+    throw new Error("Could not parse SHACL shapes.", { cause: error });
+  }
+  // An empty or unrelated Turtle document must not silently disable validation.
+  const rdfType = $rdf.sym("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+  for (const name of ["Record", "Victim", "Location", "Situation"]) {
+    if (!shapesStore.holds(CDM[name + "Shape"], rdfType, $rdf.sym("http://www.w3.org/ns/shacl#NodeShape"))) {
+      throw new Error(`Missing SHACL shape: ${name}Shape.`);
     }
-    console.error("Validation error:", error);
+  }
+
+  const validator = new SHACLValidator(toDataset(shapesStore));
+  const report = await validator.validate(toDataset(store));
+  if (!report.conforms) {
+    const messages = report.results.flatMap((result) => {
+      const messages = result.message.map((message) => message.value);
+      return messages.length ? messages : [`Invalid value for ${result.path?.value || result.focusNode.value}.`];
+    });
+    throw new Error(`Validation failed:\n${messages.map((message) => `- ${message}`).join("\n")}`);
+  }
+}
+
+// The form stores a calendar date. Preserve it as midnight UTC for updatedAt.
+// The validator's datatype library does not reject every impossible calendar
+// date/time, so check the lexical value before creating a typed literal too.
+function recordTimestamp(value: string): string {
+  if (!value.trim()) return ""; // SHACL reports the missing required value.
+  const timestamp = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
+  const match = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)?$/.exec(timestamp);
+  const calendarDate = match ? new Date(`${match[1]}T00:00:00Z`) : null;
+  if (!calendarDate || !Number.isFinite(calendarDate.getTime()) ||
+      calendarDate.toISOString().slice(0, 10) !== match?.[1]) {
+    throw new Error("Validation failed:\n- Record must have a valid updated timestamp (xsd:dateTime).");
+  }
+  return timestamp;
+}
+
+function addTypedTripleIf(
+  store: $rdf.IndexedFormula,
+  subject: $rdf.NamedNode,
+  predicate: $rdf.NamedNode,
+  value: string,
+  datatype: string,
+): void {
+  if (value.trim()) {
+    store.add(subject, predicate, $rdf.literal(value.trim(), $rdf.sym(`http://www.w3.org/2001/XMLSchema#${datatype}`)));
   }
 }
 
@@ -143,7 +209,7 @@ export async function saveEmergencyData(
   // Record
   store.add(recordNode, RDF_TYPE, CDM.Record);
   addTripleIf(store, recordNode, CDM.id, data.recordId);
-  addTripleIf(store, recordNode, CDM.updatedAt, data.recordDate);
+  addTypedTripleIf(store, recordNode, CDM.updatedAt, recordTimestamp(data.recordDate), "dateTime");
 
   // Victim
   store.add(recordNode, CDM.hasVictim, victimNode);
@@ -153,10 +219,10 @@ export async function saveEmergencyData(
   store.add(victimNode, RDF_TYPE, CDM.Victim);
   addTripleIf(store, victimNode, CDM.victimId, data.victimId);
   addTripleIf(store, victimNode, CDM.category, data.victimCategory);
-  addTripleIf(store, victimNode, CDM.number, data.numberOfVictims);
+  addTypedTripleIf(store, victimNode, CDM.number, data.numberOfVictims, "integer");
   addTripleIf(store, victimNode, CDM.nationality, data.nationality);
   addTripleIf(store, victimNode, CDM.gender, data.victimGender);
-  addTripleIf(store, victimNode, CDM.age, data.victimAge);
+  addTypedTripleIf(store, victimNode, CDM.age, data.victimAge, "integer");
   addTripleIf(store, victimNode, CDM.groupNationalities, data.groupNationalities);
   addTripleIf(store, victimNode, CDM.groupGenders, data.groupGenders);
   addTripleIf(store, victimNode, CDM.groupAges, data.groupAges);
@@ -167,8 +233,8 @@ export async function saveEmergencyData(
   addTripleIf(store, locationNode, CDM.state, data.state);
   addTripleIf(store, locationNode, CDM.town, data.town);
   addTripleIf(store, locationNode, CDM.village, data.village);
-  addTripleIf(store, locationNode, CDM.latitude, data.latitude);
-  addTripleIf(store, locationNode, CDM.longitude, data.longitude);
+  addTypedTripleIf(store, locationNode, CDM.latitude, data.latitude, "decimal");
+  addTypedTripleIf(store, locationNode, CDM.longitude, data.longitude, "decimal");
   addTripleIf(store, locationNode, CDM.locationId, data.locationId);
   addTripleIf(store, locationNode, CDM.locationName, data.locationName);
   addTripleIf(store, locationNode, CDM.locationType, data.locationType);
@@ -266,7 +332,7 @@ export async function loadEmergencyData(
   };
 
   const recordId = getLiteral(recordNode, CDM.id);
-  const recordDate = getLiteral(recordNode, CDM.updatedAt);
+  const recordDate = getLiteral(recordNode, CDM.updatedAt).split("T")[0];
 
   const victimId = getLiteral(victimNode, CDM.victimId);
   const victimCategory = getLiteral(victimNode, CDM.category);

@@ -20,12 +20,32 @@ hds:RecordShape a sh:NodeShape ;
         sh:path hds:updatedAt ;
         sh:minCount 1 ;
         sh:datatype xsd:dateTime ;
-        sh:message "Record must have an updated timestamp." ;
+        sh:message "Record must have a valid updated timestamp (xsd:dateTime)." ;
     ] .
 
+# Age is optional and nonnegative; no documented upper age or group-size limit.
 # Victim Shape
 hds:VictimShape a sh:NodeShape ;
     sh:targetClass hds:Victim ;
+    sh:property [
+        sh:path hds:category ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("Individual" "Group") ;
+        sh:message "Category must be Individual or Group." ;
+    ] ;
+    sh:property [
+        sh:path hds:age ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:message "Age must be a nonnegative integer." ;
+    ] ;
+    sh:property [
+        sh:path hds:gender ;
+        sh:datatype xsd:string ;
+        sh:in ("Female" "Male" "Other" "Prefer not to say") ;
+        sh:message "Gender must be one of the form's available choices." ;
+    ] ;
     sh:property [
         sh:path hds:victimId ;
         sh:minCount 1 ;
@@ -35,13 +55,28 @@ hds:VictimShape a sh:NodeShape ;
     sh:property [
         sh:path hds:number ;
         sh:minCount 1 ;
-        sh:datatype xsd:string ; # stored as string in code
-        sh:message "Number of victims is required." ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:message "Number of victims must be a positive integer." ;
     ] .
 
 # Location Shape
 hds:LocationShape a sh:NodeShape ;
     sh:targetClass hds:Location ;
+    sh:property [
+        sh:path hds:latitude ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive -90 ;
+        sh:maxInclusive 90 ;
+        sh:message "Latitude must be a decimal between -90 and 90." ;
+    ] ;
+    sh:property [
+        sh:path hds:longitude ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive -180 ;
+        sh:maxInclusive 180 ;
+        sh:message "Longitude must be a decimal between -180 and 180." ;
+    ] ;
     sh:property [
         sh:path hds:country ;
         sh:minCount 1 ;
@@ -50,9 +85,10 @@ hds:LocationShape a sh:NodeShape ;
     ] ;
     sh:property [
         sh:path hds:locationType ;
+        sh:in ("Refugee/IDP camp" "Human Trafficking/Smuggling camp") ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-        sh:message "Location type is required." ;
+        sh:message "Location type must be one of the form's available choices." ;
     ] .
 
 # Situation Shape
@@ -60,7 +96,8 @@ hds:SituationShape a sh:NodeShape ;
     sh:targetClass hds:Situation ;
     sh:property [
         sh:path hds:captivityStatus ;
+        sh:in ("Yes" "No") ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-        sh:message "Captivity status is required." ;
+        sh:message "Captivity status must be Yes or No." ;
     ] .
