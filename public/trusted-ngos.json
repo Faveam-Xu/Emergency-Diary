@@ -1,0 +1,14 @@
+{
+  "description": "Verified NGOs for Emergency Diary (PR1-1, trust source A: fixed list). Change only through a reviewed pull request. MOCK LIST: replace the entries with the team's test NGO WebIDs.",
+  "updated": "2026-11-12",
+  "ngos": [
+    {
+      "webId": "https://ngo-11.solidcommunity.net/profile/card#me",
+      "name": "Mock NGO 11 (test account)"
+    },
+    {
+      "webId": "https://mock-ngo-b.solidcommunity.net/profile/card#me",
+      "name": "Mock NGO B (placeholder)"
+    }
+  ]
+}

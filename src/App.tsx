@@ -25,6 +25,7 @@ import {
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
+import { loadTrustedNgos, roleForWebId, type UserRole } from "./trustedNgos";
 import { getEmergencyAccess, makeEmergencyPrivate } from "./accessControl";
 import {
   grantAccessToSelectedNGOs,
@@ -706,15 +707,9 @@ setEmergencyData((prev) => ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [role, setRole] = useState<"refugee" | "ngo">(() => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem("userRole");
-      if (stored === "refugee" || stored === "ngo") {
-        return stored;
-      }
-    }
-    return "refugee";
-  });
+  // PR1-1: the role is derived from the logged-in WebID (see the session
+  // effect below), never chosen by the user or read from localStorage.
+  const [role, setRole] = useState<UserRole>("refugee");
 
   type EnrichedRefugeeData = RefugeeData & {
     refugeeWebId?: string;
@@ -889,8 +884,27 @@ setEmergencyData((prev) => ({
     (async () => {
       await Promise.all([initSession(), loadOntology()]);
       const ok = isLoggedIn();
-      setLoggedIn(ok);
       const id = getWebId() ?? null;
+
+      // PR1-1: only WebIDs on the trusted NGO list get the NGO role. If the
+      // list cannot be loaded, fail closed and treat the user as a refugee.
+      let nextRole: UserRole = "refugee";
+      if (ok && id) {
+        try {
+          nextRole = roleForWebId(id, await loadTrustedNgos());
+        } catch (err) {
+          console.warn("Trusted NGO list unavailable; using refugee role.", err);
+        }
+      }
+      try {
+        // Remove the role the old login buttons stored; it is no longer used.
+        window.localStorage.removeItem("userRole");
+      } catch {
+        // Storage can be blocked; nothing to clean up then.
+      }
+
+      setRole(nextRole);
+      setLoggedIn(ok);
       setWebId(id);
       setReady(true);
     })();
@@ -1011,6 +1025,7 @@ setEmergencyData((prev) => ({
     await logout();
     setLoggedIn(false);
     setWebId(null);
+    setRole("refugee");
     setPodBaseUrl("");
     setStatus("");
     setRawRdf("");
@@ -2039,63 +2054,23 @@ setEmergencyData((prev) => ({
 
           <p>{loginTexts.notLoggedIn}</p>
 
-          <p
+          {/* PR1-1: one login for everyone; the role follows from the WebID. */}
+          <button
+            onClick={() => onLogin()}
             style={{
               marginTop: 12,
-              marginBottom: 8,
+              padding: "10px 18px",
+              borderRadius: 6,
+              border: "none",
+              backgroundColor: "#2563eb",
+              color: "white",
+              cursor: "pointer",
+              fontSize: 14,
               fontWeight: 500,
             }}
           >
-            {loginTexts.logInAs}
-          </p>
-
-          <div
-            style={{
-              display: "flex",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              onClick={() => {
-                setRole("refugee");
-                window.localStorage.setItem("userRole", "refugee");
-                onLogin();
-              }}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 6,
-                border: "none",
-                backgroundColor: "#2563eb",
-                color: "white",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              {loginTexts.btnRefugee}
-            </button>
-
-            <button
-              onClick={() => {
-                setRole("ngo");
-                window.localStorage.setItem("userRole", "ngo");
-                onLogin();
-              }}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 6,
-                border: "none",
-                backgroundColor: "#6d28d9",
-                color: "white",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              {loginTexts.btnNgo}
-            </button>
-          </div>
+            {loginTexts.btnLogin}
+          </button>
         </>
       ) : (
         <>

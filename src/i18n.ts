@@ -40,20 +40,10 @@ export const loginStrings = {
     ti: "ኣይኣተኹምን ዘለኹም",
     zh: "您尚未登录。",
   },
-  logInAs: {
-    en: "Log in as:",
-    ti: "ከምዚ እቶ፡",
-    zh: "登录身份：",
-  },
-  btnRefugee: {
-    en: "My Secure Data Place",
-    ti: "ናተይ ውሑስ ማዕኸን መረዳእታ",
-    zh: "我的安全数据空间",
-  },
-  btnNgo: {
-    en: "Support Organisation",
-    ti: "ሓጋዚ ትካል",
-    zh: "救助机构",
+  btnLogin: {
+    en: "Log in",
+    ti: "Log in", // TODO: Tigrinya translation needed
+    zh: "登录",
   },
   footer: {
     en: "To ask help, you can store your emergency data in your Solid Pod, and you choose which organisation may access it, to give you support.",
