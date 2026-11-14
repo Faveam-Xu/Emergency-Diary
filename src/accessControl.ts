@@ -1,3 +1,4 @@
+import { isTrustedNgo, loadTrustedNgos } from "./trustedNgos";
 import {
   universalAccess,
   getSolidDataset,
@@ -191,6 +192,33 @@ export async function grantAccessToSelectedNGOs(
         "ተበጻሕነት ፍቓድ የለን። እዚ ትኽክለኛ መፍለዩ ዌብ መረዳእታ ዘይመንግስታዊ ትካል ኣይኮነን፡",
         "无法授权。这些不是有效的 NGO WebID：",
       )} ${invalid.join(", ")}`,
+    );
+  }
+
+  // PR1-1: grant access only to NGOs on the trusted NGO list. If the list
+  // cannot be loaded, grant to nobody (fail closed). Revoking is not limited,
+  // so access can always be taken back.
+  const trustedNgos = await loadTrustedNgos().catch((err: unknown) => {
+    console.warn("Trusted NGO list unavailable; no access granted.", err);
+    throw new Error(
+      tr(
+        language,
+        "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.",
+        "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.", // TODO: Tigrinya translation needed
+        "无法授权：无法加载已验证机构列表。请稍后再试。",
+      ),
+    );
+  });
+
+  const unverified = ngoWebIds.filter((id) => !isTrustedNgo(id, trustedNgos));
+  if (unverified.length > 0) {
+    throw new Error(
+      `${tr(
+        language,
+        "Cannot grant access. These are not verified NGOs:",
+        "Cannot grant access. These are not verified NGOs:", // TODO: Tigrinya translation needed
+        "无法授权。以下不是已验证的机构：",
+      )} ${unverified.join(", ")}`,
     );
   }
 
