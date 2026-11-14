@@ -718,6 +718,8 @@ setEmergencyData((prev) => ({
   const [role, setRole] = useState<UserRole>("refugee");
   // PR1-1: the trusted NGO list; null while not loaded or if it failed to load.
   const [verifiedNgos, setVerifiedNgos] = useState<TrustedNgo[] | null>(null);
+  // The user must agree to the consent and disclaimer before logging in.
+  const [consentGiven, setConsentGiven] = useState(false);
 
   type EnrichedRefugeeData = RefugeeData & {
     refugeeWebId?: string;
@@ -1029,6 +1031,7 @@ setEmergencyData((prev) => ({
   }, [webId]);
 
   async function onLogin() {
+    if (!consentGiven) return;
     await login();
   }
 
@@ -2071,17 +2074,44 @@ setEmergencyData((prev) => ({
 
           <p>{loginTexts.notLoggedIn}</p>
 
+          {/* Consent and disclaimer: login is only possible after agreeing. */}
+          <div style={{ maxWidth: 700, lineHeight: 1.4 }}>
+            <h4 style={{ margin: "16px 0 4px" }}>{loginTexts.consentTitle}</h4>
+            <p style={{ margin: 0 }}>{loginTexts.consentText}</p>
+            <h4 style={{ margin: "16px 0 4px" }}>
+              {loginTexts.disclaimerTitle}
+            </h4>
+            <p style={{ margin: 0 }}>{loginTexts.disclaimerText}</p>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 16,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+              />
+              {loginTexts.consentCheckbox}
+            </label>
+          </div>
+
           {/* PR1-1: one login for everyone; the role follows from the WebID. */}
           <button
             onClick={() => onLogin()}
+            disabled={!consentGiven}
             style={{
               marginTop: 12,
               padding: "10px 18px",
               borderRadius: 6,
               border: "none",
-              backgroundColor: "#2563eb",
+              backgroundColor: consentGiven ? "#2563eb" : "#9ca3af",
               color: "white",
-              cursor: "pointer",
+              cursor: consentGiven ? "pointer" : "not-allowed",
               fontSize: 14,
               fontWeight: 500,
             }}

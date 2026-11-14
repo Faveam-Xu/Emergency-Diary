@@ -45,6 +45,34 @@ export const loginStrings = {
     ti: "Log in", // TODO: Tigrinya translation needed
     zh: "登录",
   },
+  // Consent and disclaimer: English and Tigrinya from
+  // "Consent and Disclaimer Emergency Diary.docx"; Chinese translated from
+  // the English (to be checked by a Chinese speaker).
+  consentTitle: {
+    en: "Consent",
+    ti: "ፍቃድ",
+    zh: "同意",
+  },
+  consentText: {
+    en: "By using this application, you agree to share information only if you choose. Your data will stay in your personal Solid Pod storage. Participation is voluntary and will not affect your access to services or support.",
+    ti: "ነዚ ኣፕሊኬሽን እዚ ብምጥቃም ሓበሬታ ክተካፍሉ ምስ እትመርጽ ጥራይ ኢኹም ትሰማምዑ። ሓበሬታኹም ኣብ ውልቃዊ መኽዘን ሶሊድ ፖድ ክዕቀብ እዩ። ተሳትፎ ብወለንታ ዝፍጸም ኮይኑ ኣብዚ ምስታፍ ነቲ ዝነበረ ግልጋሎት ወይ ደገፍ ኣይጸልዎን።",
+    zh: "使用本应用即表示您同意：只有在您自己选择时才会分享信息。您的数据将保存在您个人的 Solid Pod 存储中。参与完全自愿，不会影响您获得服务或支持。",
+  },
+  disclaimerTitle: {
+    en: "Disclaimer",
+    ti: "መተሓሳሰቢ",
+    zh: "免责声明",
+  },
+  disclaimerText: {
+    en: "This application is a research tool, not an official registration or service. It is designed to improve privacy and data control. Using this app does not change your legal status or access to humanitarian aid.",
+    ti: "እዚ ኣፕሊኬሽን እዚ መጽናዕታዊ መሳርሒ እምበር ወግዓዊ ምዝገባ ወይ ግልጋሎት ኣይኮነን። ብሕታዊነትን ምቁጽጻር ሓበሬታን ንምምሕያሽ ዝተዳለወ እዩ። ነዚ ኣፕሊኬሽን ምጥቃም ሕጋዊ ኩነታት ወይ ንሰብኣዊ ሓገዝ ንምርካብ ዝሕግዝ ወይ ዝኽልክል ኣይኮነን።",
+    zh: "本应用是一个研究工具，并非官方登记或服务。它旨在改善隐私和数据控制。使用本应用不会改变您的法律身份，也不会影响您获得人道主义援助。",
+  },
+  consentCheckbox: {
+    en: "I have read and agree to the consent and disclaimer above.",
+    ti: "I have read and agree to the consent and disclaimer above.", // TODO: Tigrinya translation needed
+    zh: "我已阅读并同意以上同意书和免责声明。",
+  },
   footer: {
     en: "To ask help, you can store your emergency data in your Solid Pod, and you choose which organisation may access it, to give you support.",
     ti: "ሓገዝ ንምሕታት ናይ ህጹጽ አዋን ሓበሬታኹም ኣብ ሶሊድ ፖድ ክትዕቅቡን ዝመረጽኩምዎ ትካል ነቲ ሓበሬታኹም ተጠቒሙ ዘድልየኩም ድጋፍ ክህበኩም ፍቓድ ክትህቡ ትኽእሉ ኢኹም።",
