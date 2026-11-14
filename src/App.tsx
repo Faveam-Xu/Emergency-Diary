@@ -25,7 +25,13 @@ import {
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
-import { loadTrustedNgos, roleForWebId, type UserRole } from "./trustedNgos";
+import {
+  isTrustedNgo,
+  loadTrustedNgos,
+  roleForWebId,
+  type TrustedNgo,
+  type UserRole,
+} from "./trustedNgos";
 import { getEmergencyAccess, makeEmergencyPrivate } from "./accessControl";
 import {
   grantAccessToSelectedNGOs,
@@ -710,6 +716,8 @@ setEmergencyData((prev) => ({
   // PR1-1: the role is derived from the logged-in WebID (see the session
   // effect below), never chosen by the user or read from localStorage.
   const [role, setRole] = useState<UserRole>("refugee");
+  // PR1-1: the trusted NGO list; null while not loaded or if it failed to load.
+  const [verifiedNgos, setVerifiedNgos] = useState<TrustedNgo[] | null>(null);
 
   type EnrichedRefugeeData = RefugeeData & {
     refugeeWebId?: string;
@@ -889,9 +897,11 @@ setEmergencyData((prev) => ({
       // PR1-1: only WebIDs on the trusted NGO list get the NGO role. If the
       // list cannot be loaded, fail closed and treat the user as a refugee.
       let nextRole: UserRole = "refugee";
+      let ngoList: TrustedNgo[] | null = null;
       if (ok && id) {
         try {
-          nextRole = roleForWebId(id, await loadTrustedNgos());
+          ngoList = await loadTrustedNgos();
+          nextRole = roleForWebId(id, ngoList);
         } catch (err) {
           console.warn("Trusted NGO list unavailable; using refugee role.", err);
         }
@@ -904,6 +914,7 @@ setEmergencyData((prev) => ({
       }
 
       setRole(nextRole);
+      setVerifiedNgos(ngoList);
       setLoggedIn(ok);
       setWebId(id);
       setReady(true);
@@ -1273,9 +1284,15 @@ setEmergencyData((prev) => ({
     }
   };
 
+  // PR1-1: refugees can only add NGOs from the trusted list.
+  const addableNgos = (verifiedNgos ?? []).filter(
+    (ngo) => !allNgos.includes(ngo.webId),
+  );
+
   const addNgoToList = () => {
     const trimmed = newNgo.trim();
     if (!trimmed) return;
+    if (!isTrustedNgo(trimmed, verifiedNgos ?? [])) return;
 
     if (!allNgos.includes(trimmed)) {
       setAllNgos([...allNgos, trimmed]);
@@ -3141,6 +3158,11 @@ setEmergencyData((prev) => ({
                   {allNgos.map((ngo, index) => {
                     const hasAccess = ngoAccessMap[ngo];
                     const hasViewed = ngoViewMap[ngo];
+                    // PR1-1: name of a verified NGO; unverified entries stay
+                    // selectable so they can still be revoked or removed.
+                    const verifiedName = verifiedNgos?.find(
+                      (v) => v.webId === ngo.trim(),
+                    )?.name;
 
                     return (
                       <label
@@ -3171,7 +3193,7 @@ setEmergencyData((prev) => ({
                               textDecoration: hasAccess ? "underline" : "none",
                             }}
                           >
-                            {ngo}
+                            {verifiedName ? `${verifiedName}: ${ngo}` : ngo}
                             {hasAccess && (
                               <span style={{ marginLeft: 6 }}>
                                 ✓{" "}
@@ -3202,25 +3224,62 @@ setEmergencyData((prev) => ({
                               {dashboardTexts.ngoViewedYourData}
                             </span>
                           )}
+
+                          {verifiedNgos !== null && !verifiedName && (
+                            <span
+                              style={{
+                                marginTop: 2,
+                                fontSize: 12,
+                                fontWeight: hasAccess ? 600 : 400,
+                                color: "#b45309",
+                              }}
+                            >
+                              {hasAccess
+                                ? dashboardTexts.notVerifiedHasAccess
+                                : dashboardTexts.notVerifiedNgo}
+                            </span>
+                          )}
                         </div>
                       </label>
                     );
                   })}
 
                   <div style={{ marginTop: 16 }}>
-                    <input
-                      type="text"
-                      value={newNgo}
-                      onChange={(e) => setNewNgo(e.target.value)}
-                      placeholder={dashboardTexts.addNewNgo}
-                      style={{
-                        width: "100%",
-                        padding: 8,
-                        border: "1px solid #ccc",
-                        borderRadius: 4,
-                        marginBottom: 8,
-                      }}
-                    />
+                    {/* PR1-1: pick from verified NGOs instead of typing any WebID. */}
+                    {verifiedNgos === null ? (
+                      <p
+                        style={{
+                          fontSize: 13,
+                          color: "#f46f6fff",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {dashboardTexts.verifiedNgoListUnavailable}
+                      </p>
+                    ) : (
+                      <select
+                        value={newNgo}
+                        onChange={(e) => setNewNgo(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: 8,
+                          border: "1px solid #ccc",
+                          borderRadius: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <option value="">
+                          {addableNgos.length > 0
+                            ? dashboardTexts.chooseVerifiedNgo
+                            : dashboardTexts.allVerifiedNgosAdded}
+                        </option>
+                        {addableNgos.map((ngo) => (
+                          <option key={ngo.webId} value={ngo.webId}>
+                            {ngo.name} ({ngo.webId})
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       onClick={addNgoToList}
                       style={{

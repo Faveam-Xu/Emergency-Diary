@@ -314,6 +314,32 @@ export const dashboardStrings = {
   },
   addNewNgo: { en: "Add new NGO", ti: "ሓዱሽ ዘይመንግስታዊ ትካል ወስኽ/ኺ", zh: "添加新 NGO" },
   addNgo: { en: "Add NGO", ti: "ዘይመንግስታዊ ትካል ወስኽ", zh: "添加 NGO" },
+  // PR1-1 texts. TODO: Tigrinya translations needed (English for now).
+  chooseVerifiedNgo: {
+    en: "Choose a verified NGO…",
+    ti: "Choose a verified NGO…",
+    zh: "选择已验证的机构…",
+  },
+  allVerifiedNgosAdded: {
+    en: "All verified NGOs are already in your list.",
+    ti: "All verified NGOs are already in your list.",
+    zh: "所有已验证的机构都已在您的列表中。",
+  },
+  verifiedNgoListUnavailable: {
+    en: "The list of verified NGOs could not be loaded, so no NGO can be added or granted access right now.",
+    ti: "The list of verified NGOs could not be loaded, so no NGO can be added or granted access right now.",
+    zh: "无法加载已验证机构列表，目前无法添加机构或授予访问权限。",
+  },
+  notVerifiedNgo: {
+    en: "Not verified: you can revoke access or remove it, but not grant access.",
+    ti: "Not verified: you can revoke access or remove it, but not grant access.",
+    zh: "未验证：您可以撤销其访问权限或将其删除，但不能授予访问权限。",
+  },
+  notVerifiedHasAccess: {
+    en: "Not verified, but still has access from an earlier grant. Consider revoking it.",
+    ti: "Not verified, but still has access from an earlier grant. Consider revoking it.",
+    zh: "未验证，但仍保留之前授予的访问权限。建议撤销。",
+  },
   selectAll: { en: "Select All", ti: "ኩሎም ምረጽ/ጺ", zh: "全选" },
   deselectAll: { en: "Deselect All", ti: "ኩሎም ኣይትምረጽ/ጺ", zh: "取消全选" },
   deleteSelectedNgos: {
