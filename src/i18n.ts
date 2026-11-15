@@ -348,6 +348,11 @@ export const dashboardStrings = {
     ti: "Choose a verified NGO…",
     zh: "选择已验证的机构…",
   },
+  noVerifiedNgos: {
+    en: "No verified NGOs are available right now.",
+    ti: "No verified NGOs are available right now.",
+    zh: "目前没有可用的已验证机构。",
+  },
   allVerifiedNgosAdded: {
     en: "All verified NGOs are already in your list.",
     ti: "All verified NGOs are already in your list.",
