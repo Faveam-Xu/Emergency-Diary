@@ -32,7 +32,11 @@ import {
   type TrustedNgo,
   type UserRole,
 } from "./trustedNgos";
-import { getEmergencyAccess, makeEmergencyPrivate } from "./accessControl";
+import {
+  getAgentsWithRecordAccess,
+  getEmergencyAccess,
+  makeEmergencyPrivate,
+} from "./accessControl";
 import {
   grantAccessToSelectedNGOs,
   revokeAccessFromSelectedNGOs,
@@ -718,6 +722,9 @@ setEmergencyData((prev) => ({
   const [role, setRole] = useState<UserRole>("refugee");
   // PR1-1: the trusted NGO list; null while not loaded or if it failed to load.
   const [verifiedNgos, setVerifiedNgos] = useState<TrustedNgo[] | null>(null);
+  // Pod whose saved NGO list has been loaded. The list is only auto-saved for
+  // that Pod, so an empty list in memory never overwrites the saved one.
+  const [ngoListLoadedFor, setNgoListLoadedFor] = useState<string | null>(null);
 
   type EnrichedRefugeeData = RefugeeData & {
     refugeeWebId?: string;
@@ -926,10 +933,14 @@ setEmergencyData((prev) => ({
     (async () => {
       try {
         const ngos = await loadNgoList(podBaseUrl);
-        if (ngos && ngos.length > 0) {
-          setAllNgos(ngos);
-          setTrustedNgos([]);
-        }
+        // Also list every NGO that can currently read the record, so it can
+        // always be revoked, even if it is missing from the saved list.
+        const withAccess = await getAgentsWithRecordAccess(podBaseUrl, webId);
+        const merged = [...new Set([...(ngos ?? []), ...withAccess])];
+        setAllNgos(merged);
+        setTrustedNgos([]);
+        // null means the saved list could not be read: never save over it.
+        if (ngos !== null) setNgoListLoadedFor(podBaseUrl);
 
         try {
           const data = await loadEmergencyData(podBaseUrl);
@@ -957,7 +968,7 @@ setEmergencyData((prev) => ({
         console.error("Error loading NGO list", err);
       }
     })();
-  }, [podBaseUrl]);
+  }, [podBaseUrl, webId]);
 
   useEffect(() => {
     async function loadNgoAccess() {
@@ -996,13 +1007,14 @@ setEmergencyData((prev) => ({
   useEffect(() => {
     (async () => {
       if (!podBaseUrl) return;
+      if (ngoListLoadedFor !== podBaseUrl) return;
       try {
         await saveNgoList(podBaseUrl, allNgos);
       } catch (err) {
         console.warn("Error while saving NGO list", err);
       }
     })();
-  }, [allNgos, podBaseUrl]);
+  }, [allNgos, podBaseUrl, ngoListLoadedFor]);
 
   useEffect(() => {
     (async () => {
@@ -1037,6 +1049,8 @@ setEmergencyData((prev) => ({
     setLoggedIn(false);
     setWebId(null);
     setRole("refugee");
+    setNgoListLoadedFor(null);
+    setAllNgos([]);
     setPodBaseUrl("");
     setStatus("");
     setRawRdf("");
@@ -3271,7 +3285,9 @@ setEmergencyData((prev) => ({
                         <option value="">
                           {addableNgos.length > 0
                             ? dashboardTexts.chooseVerifiedNgo
-                            : dashboardTexts.allVerifiedNgosAdded}
+                            : verifiedNgos.length === 0
+                              ? dashboardTexts.noVerifiedNgos
+                              : dashboardTexts.allVerifiedNgosAdded}
                         </option>
                         {addableNgos.map((ngo) => (
                           <option key={ngo.webId} value={ngo.webId}>

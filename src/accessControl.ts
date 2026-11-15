@@ -246,35 +246,31 @@ export async function grantAccessToSelectedNGOs(
 
       const ngoPodBase = getPodBaseFromWebId(ngoWebId);
       if (ngoPodBase) {
-        try {
-          await appendRefugeeToNgoIndex(
-            ngoWebId,
-            ngoPodBase,
-            refugeeWebId,
-            emergencyFileUrl,
-          );
-          console.log("Granted access to NGO", ngoWebId);
-        } catch (e) {
-          try {
-            await universalAccess.setAgentAccess(
-              emergencyFileUrl,
-              ngoWebId,
-              { read: false, append: false, write: false },
-              { fetch: solidFetch },
-            );
-          } catch (rollbackErr) {
-            console.error(
-              "Error rolling back access for NGO",
-              ngoWebId,
-              rollbackErr,
-            );
-          }
-          throw e;
-        }
+        await appendRefugeeToNgoIndex(
+          ngoWebId,
+          ngoPodBase,
+          refugeeWebId,
+          emergencyFileUrl,
+        );
+        console.log("Granted access to NGO", ngoWebId);
       }
     } catch (e) {
       console.error("Error granting access to NGO", ngoWebId, e);
       failed.push(ngoWebId);
+      // A failed grant must not leave any access behind: undo every rule this
+      // grant may have set, each on its own so one failure does not skip the rest.
+      for (const url of [emergencyFileUrl, accessLogUrl]) {
+        try {
+          await universalAccess.setAgentAccess(
+            url,
+            ngoWebId,
+            { read: false, append: false, write: false },
+            { fetch: solidFetch },
+          );
+        } catch (rollbackErr) {
+          console.error("Error rolling back access for NGO", ngoWebId, url, rollbackErr);
+        }
+      }
     }
   }
 
@@ -336,5 +332,27 @@ export async function revokeAccessFromSelectedNGOs(
         console.error("Error removing refugee from NGO index", ngoWebId, e);
       }
     }
+  }
+}
+
+// PR1-1: every agent (other than the owner) that can currently read the
+// emergency record, so the refugee always sees, and can revoke, every NGO with
+// access, even one missing from their saved NGO list or no longer verified.
+export async function getAgentsWithRecordAccess(
+  podBaseUrl: string,
+  ownerWebId: string | null,
+): Promise<string[]> {
+  const fileUrl = getEmergencyFileUrl(podBaseUrl);
+  try {
+    const all = await universalAccess.getAgentAccessAll(fileUrl, {
+      fetch: solidFetch,
+    });
+    if (!all) return [];
+    return Object.entries(all)
+      .filter(([agent, access]) => access.read && agent !== ownerWebId)
+      .map(([agent]) => agent);
+  } catch (err) {
+    console.warn("Could not read who has access to the record", err);
+    return [];
   }
 }
