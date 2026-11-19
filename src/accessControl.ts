@@ -507,35 +507,37 @@ export async function grantAccessToSelectedNGOs(
 
       const ngoPodBase = getPodBaseFromWebId(ngoWebId);
       if (ngoPodBase) {
-        try {
-          await appendRefugeeToNgoIndex(
-            ngoWebId,
-            ngoPodBase,
-            refugeeWebId,
-            emergencyFileUrl,
-          );
-          console.log("Granted access to NGO", ngoWebId);
-        } catch (e) {
-          try {
-            await universalAccess.setAgentAccess(
-              emergencyFileUrl,
-              ngoWebId,
-              { read: false, append: false, write: false },
-              { fetch: solidFetch },
-            );
-          } catch (rollbackErr) {
-            console.error(
-              "Error rolling back access for NGO",
-              ngoWebId,
-              rollbackErr,
-            );
-          }
-          throw e;
-        }
+        await appendRefugeeToNgoIndex(
+          ngoWebId,
+          ngoPodBase,
+          refugeeWebId,
+          emergencyFileUrl,
+        );
+        console.log("Granted access to NGO", ngoWebId);
       }
     } catch (e) {
       console.error("Error granting access to NGO", ngoWebId, e);
       failed.push(ngoWebId);
+      // A failed grant must not leave any access behind: undo the record,
+      // access-log and evidence rules, each on its own so one failure does
+      // not skip the rest.
+      for (const url of [emergencyFileUrl, accessLogUrl]) {
+        try {
+          await universalAccess.setAgentAccess(
+            url,
+            ngoWebId,
+            { read: false, append: false, write: false },
+            { fetch: solidFetch },
+          );
+        } catch (rollbackErr) {
+          console.error("Error rolling back access for NGO", ngoWebId, url, rollbackErr);
+        }
+      }
+      try {
+        await setEvidenceAccessForAgent(refugeePodBase, ngoWebId, false);
+      } catch (rollbackErr) {
+        console.error("Error rolling back evidence access for NGO", ngoWebId, rollbackErr);
+      }
     }
   }
 
