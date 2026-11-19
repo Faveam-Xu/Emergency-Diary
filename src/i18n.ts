@@ -70,7 +70,7 @@ export const loginStrings = {
   },
   consentCheckbox: {
     en: "I have read and agree to the consent and disclaimer above.",
-    ti: "I have read and agree to the consent and disclaimer above.", // TODO: Tigrinya translation needed
+    ti: "ነቲ ኣብ ላዕሊ ዘሎ ፍቃድን መተሓሳሰቢን ኣንቢበ ይሰማማዕ እየ።", // ti: unverified, needs native-speaker check
     zh: "我已阅读并同意以上同意书和免责声明。",
   },
   footer: {
