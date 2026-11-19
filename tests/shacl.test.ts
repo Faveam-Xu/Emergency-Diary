@@ -40,18 +40,21 @@ async function rejected(data: EmergencyData, message: string) {
 
 describe('PR1-2 SHACL save gate', () => {
   it('uploads a valid graph with typed values and preserves the form date on reload', async () => {
-    await expect(saveEmergencyData(pod, valid())).resolves.toBe(`${pod}public/emergency.ttl`);
+    // The record lives in public/ before PR0-2 and in private/ after it.
+    const fileUrl = await saveEmergencyData(pod, valid());
+    expect(fileUrl).toMatch(/^https:\/\/example\.test\/pod\/(public|private)\/emergency\.ttl$/);
+    expect(mocks.upload.mock.calls[0][0]).toBe(fileUrl);
     expect(mocks.upload).toHaveBeenCalledTimes(1);
     const request = mocks.upload.mock.calls[0][1];
     expect(request.method).toBe('PUT');
     const graph = rdf.graph();
-    rdf.parse(request.body, graph, `${pod}public/emergency.ttl`, 'text/turtle');
+    rdf.parse(request.body, graph, fileUrl, 'text/turtle');
     for (const [node, property, datatype] of [
       ['record', 'updatedAt', 'dateTime'], ['victim', 'number', 'integer'],
       ['victim', 'age', 'integer'], ['location', 'latitude', 'decimal'],
       ['location', 'longitude', 'decimal'],
     ]) {
-      const literal = graph.any(rdf.sym(`${pod}public/emergency.ttl#${node}`), rdf.sym(`http://example.org/hds#${property}`)) as rdf.Literal;
+      const literal = graph.any(rdf.sym(`${fileUrl}#${node}`), rdf.sym(`http://example.org/hds#${property}`)) as rdf.Literal;
       expect(literal.datatype.value).toBe(`http://www.w3.org/2001/XMLSchema#${datatype}`);
     }
     mocks.upload.mockResolvedValueOnce(new Response(request.body));
