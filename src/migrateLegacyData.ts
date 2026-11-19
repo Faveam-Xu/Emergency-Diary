@@ -250,17 +250,25 @@ export async function migrateLegacyPublicData(
   // --- 4. Any NGO that already had explicit read access to the legacy
   //        public emergency.ttl should keep access to its private
   //        replacement, via the normal grant flow (requirement 7). ---
+  // Grant each NGO separately, so one NGO that cannot be granted (for
+  // example one that is not verified, or has no inbox yet) does not stop
+  // the others from keeping their access.
+  const notRegranted: string[] = [];
   if (!failed && grantedNgoWebIds.length > 0) {
-    try {
-      await grantAccessToSelectedNGOs(
-        grantedNgoWebIds,
-        podBaseUrl,
-        webId,
-        language,
-      );
-    } catch (e) {
-      console.error("Error restoring NGO access after migration", e);
-      failed = true;
+    for (const ngoWebId of grantedNgoWebIds) {
+      try {
+        await grantAccessToSelectedNGOs(
+          [ngoWebId],
+          podBaseUrl,
+          webId,
+          language,
+        );
+      } catch (e) {
+        // The data has already moved, so this is not a failed migration;
+        // the refugee is told which NGOs to grant again.
+        console.error("Error restoring NGO access after migration", ngoWebId, e);
+        notRegranted.push(ngoWebId);
+      }
     }
   }
 
@@ -319,16 +327,32 @@ export async function migrateLegacyPublicData(
     return { migrated: false, failed: false, message: "" };
   }
 
+  // Appended to the success messages below when some NGO's access could not
+  // be restored after the move.
+  const regrantNote =
+    notRegranted.length > 0
+      ? " " +
+        tr(
+          language,
+          "Access could not be restored for these NGOs; grant it again if needed:",
+          "Access could not be restored for these NGOs; grant it again if needed:", // TODO: Tigrinya translation needed
+          "无法为以下机构恢复访问权限，如有需要请重新授权：",
+        ) +
+        " " +
+        notRegranted.join(", ")
+      : "";
+
   if (migratedAnything && healedOrphans) {
     return {
       migrated: true,
       failed: false,
-      message: tr(
-        language,
-        "Old public data has been migrated to private storage, and some evidence photos have been re-linked to your record.",
-        "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ፣ ገለ ኣብ መረጋገጺ ዝነበሩ ስእልታት እውን ምስ መረዳእታኻ ተኣሳሲሮም።",
-        "已将旧数据迁移到私有存储，并重新关联了一些未被记录引用的证据照片。",
-      ),
+      message:
+        tr(
+          language,
+          "Old public data has been migrated to private storage, and some evidence photos have been re-linked to your record.",
+          "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ፣ ገለ ኣብ መረጋገጺ ዝነበሩ ስእልታት እውን ምስ መረዳእታኻ ተኣሳሲሮም።",
+          "已将旧数据迁移到私有存储，并重新关联了一些未被记录引用的证据照片。",
+        ) + regrantNote,
     };
   }
 
@@ -348,11 +372,12 @@ export async function migrateLegacyPublicData(
   return {
     migrated: true,
     failed: false,
-    message: tr(
-      language,
-      "Old public data has been migrated to private storage.",
-      "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ።",
-      "已将旧数据迁移到私有存储。",
-    ),
+    message:
+      tr(
+        language,
+        "Old public data has been migrated to private storage.",
+        "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ።",
+        "已将旧数据迁移到私有存储。",
+      ) + regrantNote,
   };
 }
