@@ -9,6 +9,9 @@ export async function stripImageMetadata(
     return file;
   }
 
+  // Fail closed: if the photo cannot be cleaned, refuse to upload it rather
+  // than storing the original bytes with their EXIF/GPS tags.
+  let blob: Blob | null = null;
   try {
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement("canvas");
@@ -16,20 +19,23 @@ export async function stripImageMetadata(
     canvas.height = bitmap.height;
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-
-    ctx.drawImage(bitmap, 0, 0);
-
-    const outputType = type === "image/png" ? "image/png" : "image/jpeg";
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, outputType, 0.92),
-    );
-
-    return blob ?? file;
+    if (ctx) {
+      ctx.drawImage(bitmap, 0, 0);
+      const outputType = type === "image/png" ? "image/png" : "image/jpeg";
+      blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, outputType, 0.92),
+      );
+    }
   } catch (e) {
-    console.warn("Could not strip image metadata, uploading as-is:", e);
-    return file;
+    console.warn("Could not strip image metadata:", e);
   }
+
+  if (!blob) {
+    throw new Error(
+      "Could not remove location data from this photo, so it was not uploaded.",
+    );
+  }
+  return blob;
 }
 
 function extensionForMimeType(mimeType: string): string {
