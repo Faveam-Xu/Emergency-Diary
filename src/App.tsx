@@ -1496,7 +1496,11 @@ setEmergencyData((prev) => ({
 
       setNgoAccessMap(updatedMap);
 
-      const granted = trustedNgos.filter((ngo) => updatedMap[ngo]);
+      // Only count NGOs that gained access now; one that already had access
+      // before this attempt must not be reported as "granted".
+      const granted = trustedNgos.filter(
+        (ngo) => updatedMap[ngo] && !ngoAccessMap[ngo],
+      );
       const failedAfter = trustedNgos.filter((ngo) => !updatedMap[ngo]);
 
       if (granted.length > 0 && failedAfter.length === 0) {
