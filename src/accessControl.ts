@@ -204,7 +204,7 @@ export async function grantAccessToSelectedNGOs(
       tr(
         language,
         "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.",
-        "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.", // TODO: Tigrinya translation needed
+        "ተበጻሕነት ፍቓድ ኣይተውሃበን፡ ዝርዝር ዝተረጋገጹ ዘይመንግስታዊ ትካላት ክጽዓን ኣይከኣለን። ደሓር ደጊምካ ፈትን።", // ti: unverified, needs native-speaker check
         "无法授权：无法加载已验证机构列表。请稍后再试。",
       ),
     );
@@ -216,7 +216,7 @@ export async function grantAccessToSelectedNGOs(
       `${tr(
         language,
         "Cannot grant access. These are not verified NGOs:",
-        "Cannot grant access. These are not verified NGOs:", // TODO: Tigrinya translation needed
+        "ተበጻሕነት ፍቓድ ኣይተውሃበን። እዞም ዝተረጋገጹ ዘይመንግስታዊ ትካላት ኣይኮኑን፡", // ti: unverified, needs native-speaker check
         "无法授权。以下不是已验证的机构：",
       )} ${unverified.join(", ")}`,
     );
