@@ -379,6 +379,31 @@ export const dashboardStrings = {
     ti: "እዚ ዘይመንግስታዊ ትካል እዚ መረዳእታኻ ሪእዎ ኣሎ",
     zh: "该 NGO 已查看您的数据",
   },
+  lastSuccessfulRead: {
+    en: "Last successful read:",
+    ti: "Last successful read:",
+    zh: "最近一次成功读取：",
+  },
+  oldRecordResultUnknown: {
+    en: "Old record, result unknown",
+    ti: "Old record, result unknown",
+    zh: "旧记录，结果未知",
+  },
+  failedReadAttempts: {
+    en: "Failed read attempts:",
+    ti: "Failed read attempts:",
+    zh: "读取失败次数：",
+  },
+  accessGivenOn: {
+    en: "Access given:",
+    ti: "Access given:",
+    zh: "授权时间：",
+  },
+  accessRemovedOn: {
+    en: "Access removed:",
+    ti: "Access removed:",
+    zh: "撤销时间：",
+  },
   couldNotGrantAccessFor: {
     en: "Could not grant access for:",
     ti: "ተበጻሕነት ፍቓድ ኣይተውሃበን ን:",
