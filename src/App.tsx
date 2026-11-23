@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, CSSProperties } from "react";
 
 import { initSession, login, logout, isLoggedIn, getWebId } from "./auth";
 import {
@@ -7,6 +7,8 @@ import {
   loadEmergencyData,
   saveNgoList,
   loadNgoList,
+  ensureEvidenceUrlsPresent,
+  mergeEvidenceUrls,
 } from "./solidDatanew";
 import { loadOntology, getOntologyStore } from "./cdmnew";
 import type { EmergencyData } from "./solidDatanew";
@@ -20,16 +22,18 @@ import {
   getUrl,
   getUrlAll,
   getStringNoLocale,
-  createSolidDataset,
-  saveSolidDatasetAt,
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
-import { getEmergencyAccess, makeEmergencyPrivate } from "./accessControl";
+import { getEmergencyAccess } from "./accessControl";
 import {
   grantAccessToSelectedNGOs,
   revokeAccessFromSelectedNGOs,
+  ensurePrivateContainer,
+  ensureSecureNgoInbox,
 } from "./accessControl";
+import { stripImageMetadata, randomEvidenceFileName } from "./imageUtils";
+import { migrateLegacyPublicData } from "./migrateLegacyData";
 
 import { COUNTRIES } from "./countries";
 import { NATIONALITIES } from "./nationalities";
@@ -352,7 +356,7 @@ function generateId(prefix: string): string {
 }
 
 function getPodBaseFromEmergencyUrl(emergencyFileUrl: string): string | null {
-  const marker = "/public/emergency.ttl";
+  const marker = "/private/emergency.ttl";
   const index = emergencyFileUrl.indexOf(marker);
   if (index === -1) return null;
 
@@ -467,6 +471,65 @@ function requestGPS(): Promise<GeolocationCoordinates> {
       (err) => reject(err)
     );
   });
+}
+
+// Evidence photos are stored privately (PR0-2), so a plain <img src="..."> is
+// unauthenticated and gets a 401. Fetch the bytes with the logged-in session's
+// fetch instead and display them via a local blob URL, revoked on unmount/
+// URL change so we don't leak object URLs.
+function PrivateImage({
+  url,
+  alt,
+  style,
+}: {
+  url: string;
+  alt: string;
+  style?: CSSProperties;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let localObjectUrl: string | null = null;
+    let cancelled = false;
+
+    (async () => {
+      setFailed(false);
+      setObjectUrl(null);
+      try {
+        const response = await solidFetch(url);
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        if (cancelled) return;
+        localObjectUrl = URL.createObjectURL(blob);
+        setObjectUrl(localObjectUrl);
+      } catch (e) {
+        console.warn("Could not load private evidence photo", url, e);
+        if (!cancelled) setFailed(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (localObjectUrl) URL.revokeObjectURL(localObjectUrl);
+    };
+  }, [url]);
+
+  if (failed) {
+    return (
+      <span style={{ fontSize: 12, color: "#999", ...style }}>
+        Image unavailable
+      </span>
+    );
+  }
+  if (!objectUrl) {
+    return (
+      <span style={{ fontSize: 12, color: "#999", ...style }}>Loading…</span>
+    );
+  }
+  return <img src={objectUrl} alt={alt} style={style} />;
 }
 
 export default function App() {
@@ -879,13 +942,6 @@ setEmergencyData((prev) => ({
   const [ngoViewMap, setNgoViewMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-  // Use 'loggedIn' (the state variable defined on line 719), 
-  // NOT 'isLoggedIn' (the function imported on line 4).
-  if (loggedIn && role === "refugee") {
-    handleGetGPS();
-  }
-}, [loggedIn, role]);
-  useEffect(() => {
     (async () => {
       await Promise.all([initSession(), loadOntology()]);
       const ok = isLoggedIn();
@@ -899,6 +955,25 @@ setEmergencyData((prev) => ({
     if (!podBaseUrl) return;
 
     (async () => {
+      // One-time migration (PR0-2) for refugees who saved data under the
+      // pre-fix public/ layout: move it to private/ before loading anything,
+      // so the loads below pick up the migrated copy. Safe to run on every
+      // login - it's a no-op once nothing is left under public/.
+      let migrationMessage = "";
+      if (role === "refugee" && webId) {
+        try {
+          const migration = await migrateLegacyPublicData(
+            podBaseUrl,
+            webId,
+            allNgos,
+            language,
+          );
+          migrationMessage = migration.message;
+        } catch (err) {
+          console.error("Error migrating legacy public data", err);
+        }
+      }
+
       try {
         const ngos = await loadNgoList(podBaseUrl);
         if (ngos && ngos.length > 0) {
@@ -931,6 +1006,12 @@ setEmergencyData((prev) => ({
       } catch (err) {
         console.error("Error loading NGO list", err);
       }
+
+      // Surface the migration result last, so it isn't immediately
+      // overwritten by the "data loaded" status set above.
+      if (migrationMessage) {
+        setStatus(migrationMessage);
+      }
     })();
   }, [podBaseUrl]);
 
@@ -939,8 +1020,8 @@ setEmergencyData((prev) => ({
       if (!podBaseUrl || allNgos.length === 0) return;
 
       const emergencyFileUrl = podBaseUrl.endsWith("/")
-        ? podBaseUrl + "public/emergency.ttl"
-        : podBaseUrl + "/public/emergency.ttl";
+        ? podBaseUrl + "private/emergency.ttl"
+        : podBaseUrl + "/private/emergency.ttl";
 
       try {
         const accessMap: Record<string, boolean> = {};
@@ -970,14 +1051,15 @@ setEmergencyData((prev) => ({
 
   useEffect(() => {
     (async () => {
-      if (!podBaseUrl) return;
+      if (!podBaseUrl || !webId) return;
       try {
+        await ensurePrivateContainer(podBaseUrl, webId);
         await saveNgoList(podBaseUrl, allNgos);
       } catch (err) {
         console.warn("Error while saving NGO list", err);
       }
     })();
-  }, [allNgos, podBaseUrl]);
+  }, [allNgos, podBaseUrl, webId]);
 
   useEffect(() => {
     (async () => {
@@ -1002,6 +1084,27 @@ setEmergencyData((prev) => ({
       }
     })();
   }, [webId]);
+
+  // Auto-check and repair the NGO inbox ACL on every NGO login, instead of
+  // relying solely on the "Initialise NGO inbox" button - an inbox created
+  // (or tampered with) under an older, public-write ACL would otherwise stay
+  // insecure until someone happens to click that button again.
+  useEffect(() => {
+    (async () => {
+      if (!loggedIn || role !== "ngo" || !podBaseUrl || !webId) return;
+
+      const base = podBaseUrl.endsWith("/")
+        ? podBaseUrl.slice(0, -1)
+        : podBaseUrl;
+      const indexUrl = `${base}/public/refugeesGranted.ttl`;
+
+      try {
+        await ensureSecureNgoInbox(indexUrl, webId);
+      } catch (err) {
+        console.warn("Error auto-securing NGO inbox", err);
+      }
+    })();
+  }, [loggedIn, role, podBaseUrl, webId]);
 
   async function onLogin() {
     await login();
@@ -1067,15 +1170,18 @@ setEmergencyData((prev) => ({
     if (!webId) throw new Error("Missing WebID, cannot upload evidence.");
 
     const podBase = getPodBaseFromWebId(webId);
-    const folderUrl = `${podBase}public/evidence/`;
-    const fileName = `${Date.now()}-${file.name}`;
-    const fileUrl = `${folderUrl}${encodeURIComponent(fileName)}`;
+    await ensurePrivateContainer(podBase, webId);
 
-    const arrayBuffer = await file.arrayBuffer();
+    const folderUrl = `${podBase}private/evidence/`;
+    const cleaned = await stripImageMetadata(file);
+    const contentType = file.type || "image/jpeg";
+    const fileName = randomEvidenceFileName(contentType);
+    const fileUrl = `${folderUrl}${fileName}`;
+
     const response = await solidFetch(fileUrl, {
       method: "PUT",
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-      body: new Uint8Array(arrayBuffer),
+      headers: { "Content-Type": contentType },
+      body: cleaned,
     });
 
     if (!response.ok) {
@@ -1083,6 +1189,12 @@ setEmergencyData((prev) => ({
         `Failed to upload evidence file: ${response.status} ${response.statusText}`,
       );
     }
+
+    // Record the new photo in the Pod record immediately - otherwise it
+    // only exists in React state, and is orphaned (referenced by nothing)
+    // the moment the user refreshes or closes the page without clicking
+    // Save.
+    await ensureEvidenceUrlsPresent(podBase, [fileUrl]);
 
     return fileUrl;
   };
@@ -1223,8 +1335,28 @@ setEmergencyData((prev) => ({
 
     try {
       setStatus(dashboardTexts.saving);
-      const url = await saveEmergencyData(podBaseUrl, toEmergencyData());
-      await makeEmergencyPrivate(podBaseUrl);
+      if (webId) {
+        await ensurePrivateContainer(podBaseUrl, webId);
+      }
+
+      const data = toEmergencyData();
+      // Merge with whatever evidenceUrls are already on the Pod rather than
+      // overwriting them with this session's (possibly stale/incomplete)
+      // React state - uploads and migration write straight to the Pod and
+      // may know about photos this form never loaded.
+      try {
+        const persisted = await loadEmergencyData(podBaseUrl);
+        if (persisted) {
+          data.evidenceUrls = mergeEvidenceUrls(
+            persisted.evidenceUrls,
+            evidenceUrls,
+          );
+        }
+      } catch (err) {
+        console.warn("Could not read persisted evidenceUrls before save", err);
+      }
+
+      const url = await saveEmergencyData(podBaseUrl, data);
       setIsPublic(false);
 
       setStatus(`${dashboardTexts.savedPrivate}: ${url}`);
@@ -1239,7 +1371,7 @@ setEmergencyData((prev) => ({
   async function handlePreviewRdf() {
     try {
       setStatus("fetching rdf…");
-      const res = await solidFetch(`${podBaseUrl}public/emergency.ttl`);
+      const res = await solidFetch(`${podBaseUrl}private/emergency.ttl`);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const txt = await res.text();
       setRawRdf(txt);
@@ -1316,8 +1448,8 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.grantingAccess);
 
     const emergencyFileUrl = podBaseUrl.endsWith("/")
-      ? podBaseUrl + "public/emergency.ttl"
-      : podBaseUrl + "/public/emergency.ttl";
+      ? podBaseUrl + "private/emergency.ttl"
+      : podBaseUrl + "/private/emergency.ttl";
 
     try {
       await grantAccessToSelectedNGOs(
@@ -1364,7 +1496,11 @@ setEmergencyData((prev) => ({
 
       setNgoAccessMap(updatedMap);
 
-      const granted = trustedNgos.filter((ngo) => updatedMap[ngo]);
+      // Only count NGOs that gained access now; one that already had access
+      // before this attempt must not be reported as "granted".
+      const granted = trustedNgos.filter(
+        (ngo) => updatedMap[ngo] && !ngoAccessMap[ngo],
+      );
       const failedAfter = trustedNgos.filter((ngo) => !updatedMap[ngo]);
 
       if (granted.length > 0 && failedAfter.length === 0) {
@@ -1398,8 +1534,8 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.revokingAccess);
 
     const emergencyFileUrl = podBaseUrl.endsWith("/")
-      ? podBaseUrl + "public/emergency.ttl"
-      : podBaseUrl + "/public/emergency.ttl";
+      ? podBaseUrl + "private/emergency.ttl"
+      : podBaseUrl + "/private/emergency.ttl";
 
     try {
       await revokeAccessFromSelectedNGOs(trustedNgos, podBaseUrl, webId);
@@ -1467,6 +1603,11 @@ setEmergencyData((prev) => ({
       return;
     }
 
+    if (!webId) {
+      setNgoStatus("Missing WebID, cannot secure inbox.");
+      return;
+    }
+
     const base = podBaseUrl.endsWith("/")
       ? podBaseUrl.slice(0, -1)
       : podBaseUrl;
@@ -1475,29 +1616,17 @@ setEmergencyData((prev) => ({
     try {
       setNgoStatus("Checking inbox status...");
 
-      try {
-        await getSolidDataset(indexUrl, { fetch: solidFetch });
-        setNgoStatus("NGO inbox already initialised!");
-        return;
-      } catch {
-        // File does NOT exist – continue to create it
-      }
+      // Always (re)apply the secure ACL, even if the inbox file already
+      // existed - an inbox created by older code (or tampered with while an
+      // old public ACL was in effect) must have its permissions corrected,
+      // not just newly-created ones.
+      const { created } = await ensureSecureNgoInbox(indexUrl, webId);
 
-      setNgoStatus("Initialising NGO inbox...");
-
-      const emptyDataset = createSolidDataset();
-
-      await saveSolidDatasetAt(indexUrl, emptyDataset, {
-        fetch: solidFetch,
-      });
-
-      await universalAccess.setPublicAccess(
-        indexUrl,
-        { read: true, append: true, write: true },
-        { fetch: solidFetch },
+      setNgoStatus(
+        created
+          ? "NGO inbox initialised successfully."
+          : "NGO inbox already existed; access permissions have been re-secured.",
       );
-
-      setNgoStatus("NGO inbox initialised successfully.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setNgoStatus(`Error initialising NGO inbox: ${msg}`);
@@ -1531,14 +1660,68 @@ setEmergencyData((prev) => ({
       const dataset = await getSolidDataset(indexUrl, { fetch: solidFetch });
       const things = getThingAll(dataset);
 
-      const grants: NgoGrant[] = things
-        .filter((t) => getUrl(t, RDF_TYPE) === `${EX}Grant`)
-        .map((t) => ({
-          refugeeWebId: t.url,
-          emergencyFileUrl: getUrl(t, `${EX}emergencyFile`) ?? "",
-          grantedAt: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
-        }))
-        .filter((g) => g.refugeeWebId && g.emergencyFileUrl);
+      // The inbox is an append-only event log (PR0-1): each grant or
+      // revocation is its own entry pointing at the refugee via ex:refugee,
+      // so we resolve, per refugee, whichever event happened most recently.
+      type GrantEvent = {
+        refugeeWebId: string;
+        kind: "grant" | "revoke";
+        at: string;
+        emergencyFileUrl?: string;
+      };
+
+      // Old-format entries and garbage triples written while the inbox had
+      // a public write ACL (anything from a stray `<#x> <#y> "..."` to a
+      // thing that merely looks like a grant/revocation but has fields of
+      // the wrong shape) must be skipped individually rather than aborting
+      // the whole load, so one bad entry can't hide every legitimate grant.
+      const events: GrantEvent[] = things
+        .map((t): GrantEvent | null => {
+          try {
+            const refugeeWebId = getUrl(t, `${EX}refugee`);
+            if (!refugeeWebId) return null;
+
+            const type = getUrl(t, RDF_TYPE);
+            if (type === `${EX}Grant`) {
+              const emergencyFileUrl = getUrl(t, `${EX}emergencyFile`);
+              if (!emergencyFileUrl) return null;
+              return {
+                refugeeWebId,
+                kind: "grant",
+                at: getStringNoLocale(t, `${EX}grantedAt`) ?? "",
+                emergencyFileUrl,
+              };
+            }
+            if (type === `${EX}Revocation`) {
+              return {
+                refugeeWebId,
+                kind: "revoke",
+                at: getStringNoLocale(t, `${EX}revokedAt`) ?? "",
+              };
+            }
+            return null;
+          } catch (err) {
+            console.warn("Skipping malformed NGO inbox entry", err);
+            return null;
+          }
+        })
+        .filter((e): e is GrantEvent => e !== null);
+
+      const latestByRefugee = new Map<string, GrantEvent>();
+      for (const event of events) {
+        const current = latestByRefugee.get(event.refugeeWebId);
+        if (!current || event.at > current.at) {
+          latestByRefugee.set(event.refugeeWebId, event);
+        }
+      }
+
+      const grants: NgoGrant[] = Array.from(latestByRefugee.values())
+        .filter((e) => e.kind === "grant" && e.emergencyFileUrl)
+        .map((e) => ({
+          refugeeWebId: e.refugeeWebId,
+          emergencyFileUrl: e.emergencyFileUrl as string,
+          grantedAt: e.at,
+        }));
 
       if (!grants.length) {
         setNgoStatus("No refugees have granted you access yet.");
@@ -2902,9 +3085,9 @@ setEmergencyData((prev) => ({
                         }}
                       >
                         {evidenceUrls.map((url) => (
-                          <img
+                          <PrivateImage
                             key={url}
-                            src={url}
+                            url={url}
                             alt="Uploaded evidence"
                             style={{
                               maxWidth: 120,
