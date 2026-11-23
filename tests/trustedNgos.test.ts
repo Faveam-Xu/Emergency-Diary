@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   getAgentAccessAll: vi.fn(),
   getSolidDataset: vi.fn(),
   saveSolidDatasetAt: vi.fn(),
+  getResourceInfoWithAcl: vi.fn(),
+  saveAclFor: vi.fn(),
 }));
 
 vi.mock('../src/auth', () => ({ solidFetch: mocks.solidFetch }));
@@ -19,6 +21,12 @@ vi.mock('@inrupt/solid-client', async (importOriginal) => {
     ...actual,
     getSolidDataset: mocks.getSolidDataset,
     saveSolidDatasetAt: mocks.saveSolidDatasetAt,
+    getResourceInfoWithAcl: mocks.getResourceInfoWithAcl,
+    hasAccessibleAcl: () => true,
+    hasResourceAcl: () => true,
+    getResourceAcl: () => ({}),
+    setAgentDefaultAccess: (acl: unknown) => acl,
+    saveAclFor: mocks.saveAclFor,
     universalAccess: {
       ...actual.universalAccess,
       setAgentAccess: mocks.setAgentAccess,
@@ -36,7 +44,7 @@ const NGO_N = 'https://ml-ngo-n.solidcommunity.net/profile/card#me';
 const OUTSIDER_B = 'https://ml-outsider-b.solidcommunity.net/profile/card#me';
 const REFUGEE_A = 'https://ml-refugee-a.solidcommunity.net/profile/card#me';
 const REFUGEE_POD = 'https://ml-refugee-a.solidcommunity.net/';
-const RECORD = `${REFUGEE_POD}public/emergency.ttl`;
+const RECORD = `${REFUGEE_POD}private/emergency.ttl`;
 const ACCESS_LOG = `${REFUGEE_POD}private/ngo-access-log.ttl`;
 const NO_ACCESS = { read: false, append: false, write: false };
 
@@ -54,6 +62,8 @@ beforeEach(async () => {
   mocks.setAgentAccess.mockReset().mockResolvedValue(null);
   mocks.getAgentAccessAll.mockReset();
   mocks.solidFetch.mockReset();
+  mocks.getResourceInfoWithAcl.mockReset().mockResolvedValue({});
+  mocks.saveAclFor.mockReset().mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -117,6 +127,7 @@ describe('grant check', () => {
   });
 
   it('grants a listed NGO read access to the record', async () => {
+    mocks.solidFetch.mockResolvedValue(new Response(null, { status: 205 }));
     expect(await grantError([NGO_N])).toBe('no error');
     expect(mocks.setAgentAccess).toHaveBeenCalledWith(
       RECORD, NGO_N, { read: true, append: false, write: false }, expect.anything(),
@@ -124,9 +135,9 @@ describe('grant check', () => {
   });
 
   it('undoes the record and access-log rules when the inbox step fails', async () => {
-    mocks.saveSolidDatasetAt.mockImplementation(async (url: string) => {
-      if (url.includes('refugeesGranted.ttl')) throw new Error('403 Forbidden');
-      return {};
+    mocks.solidFetch.mockImplementation(async (url: string) => {
+      if (url.includes('refugeesGranted.ttl')) return new Response(null, { status: 403 });
+      return new Response(null, { status: 205 });
     });
     expect(await grantError([NGO_N])).toContain('Could not grant access for');
     expect(mocks.setAgentAccess).toHaveBeenCalledWith(RECORD, NGO_N, NO_ACCESS, expect.anything());
