@@ -41,6 +41,15 @@ import {
 } from "./accessControl";
 import { stripImageMetadata, randomEvidenceFileName } from "./imageUtils";
 import { migrateLegacyPublicData } from "./migrateLegacyData";
+import {
+  getNgoLogUrl,
+  appendLogEntry,
+  outcomeFromStatus,
+  loadNgoLogSummaries,
+  upgradeOldAccessLog,
+  type LogOutcome,
+  type NgoLogSummary,
+} from "./accessLog";
 
 import { COUNTRIES } from "./countries";
 import { NATIONALITIES } from "./nationalities";
@@ -81,9 +90,6 @@ ChartJS.register(
 
 const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const EX = "https://example.org/ns#";
-
-const ACCESS_LOG_NS = "http://example.org/ns/access#";
-const ACCESS_LOG_FILE = "private/ngo-access-log.ttl";
 
 type NgoGrant = {
   refugeeWebId: string;
@@ -370,93 +376,24 @@ function getPodBaseFromEmergencyUrl(emergencyFileUrl: string): string | null {
   return emergencyFileUrl.slice(0, index + 1);
 }
 
-async function logNgoViewFromNgo(emergencyFileUrl: string, ngoWebId: string) {
-  try {
-    const podBase = getPodBaseFromEmergencyUrl(emergencyFileUrl);
-    if (!podBase || !ngoWebId) return;
+async function logNgoRead(
+  emergencyFileUrl: string,
+  ngoWebId: string,
+  outcome: LogOutcome,
+  status?: number,
+): Promise<boolean> {
+  const podBase = getPodBaseFromEmergencyUrl(emergencyFileUrl);
+  if (!podBase || !ngoWebId) return false;
 
-    const logUrl = `${podBase}${ACCESS_LOG_FILE}`;
-
-    let ttlContent = "";
-    try {
-      const res = await solidFetch(logUrl);
-      if (res.ok) {
-        ttlContent = await res.text();
-      }
-    } catch {
-      // file might not exist yet – that's fine
-    }
-
-    const store = $rdf.graph();
-    if (ttlContent) {
-      try {
-        $rdf.parse(ttlContent, store, logUrl, "text/turtle");
-      } catch (e) {
-        console.error("Failed to parse existing NGO access log:", e);
-      }
-    }
-
-    const RDF_TYPE = $rdf.sym(
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-    );
-    const LOG_CLASS = $rdf.sym(ACCESS_LOG_NS + "AccessLog");
-    const HAS_ENTRY = $rdf.sym(ACCESS_LOG_NS + "hasEntry");
-    const VIEWED_BY = $rdf.sym(ACCESS_LOG_NS + "viewedBy");
-    const VIEWED_AT = $rdf.sym(ACCESS_LOG_NS + "viewedAt");
-
-    const logNode = $rdf.sym(logUrl + "#log");
-    store.add(logNode, RDF_TYPE, LOG_CLASS);
-
-    const entryNode = $rdf.sym(logUrl + "#entry-" + Date.now());
-    store.add(logNode, HAS_ENTRY, entryNode);
-    store.add(entryNode, VIEWED_BY, $rdf.literal(ngoWebId));
-    store.add(entryNode, VIEWED_AT, $rdf.literal(new Date().toISOString()));
-
-    const serialized = $rdf.serialize(null, store, logUrl, "text/turtle");
-    await solidFetch(logUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "text/turtle" },
-      body: serialized,
-    });
-  } catch (e) {
-    console.error("Failed to log NGO view:", e);
-  }
-}
-
-async function loadNgoViewStatusForRefugee(
-  podBaseUrl: string,
-): Promise<Record<string, boolean>> {
-  const fileUrl = `${podBaseUrl}${ACCESS_LOG_FILE}`;
-  let ttlContent = "";
-  try {
-    const response = await solidFetch(fileUrl);
-    if (!response.ok) {
-      return {};
-    }
-    ttlContent = await response.text();
-  } catch {
-    return {};
-  }
-
-  const store = $rdf.graph();
-  try {
-    $rdf.parse(ttlContent, store, fileUrl, "text/turtle");
-  } catch (e) {
-    console.error("Failed to parse NGO access log:", e);
-    return {};
-  }
-
-  const VIEWED_BY = $rdf.sym(ACCESS_LOG_NS + "viewedBy");
-  const map: Record<string, boolean> = {};
-
-  const statements = store.statementsMatching(null, VIEWED_BY, null);
-  statements.forEach((st) => {
-    if (st.object && st.object.termType === "Literal") {
-      map[st.object.value] = true;
-    }
-  });
-
-  return map;
+  const logUrl = getNgoLogUrl(podBase, ngoWebId);
+  return appendLogEntry(
+    logUrl,
+    ngoWebId,
+    "Read",
+    outcome,
+    emergencyFileUrl,
+    status,
+  );
 }
 
 function getPodBaseFromWebId(webId: string): string {
@@ -790,15 +727,61 @@ setEmergencyData((prev) => ({
     emergencyFileUrl?: string;
   };
 
-  async function logViewsForAllGrants(grants: NgoGrant[], ngoWebId: string) {
+  async function logQueryAttempts(grants: NgoGrant[], ngoWebId: string) {
     for (const g of grants) {
-      try {
-        if (g.emergencyFileUrl) {
-          await logNgoViewFromNgo(g.emergencyFileUrl, ngoWebId);
-        }
-      } catch (e) {
-        console.warn("Failed to log query view for refugee", g.refugeeWebId, e);
+      if (g.emergencyFileUrl) {
+        await logNgoRead(g.emergencyFileUrl, ngoWebId, "Attempt");
       }
+    }
+  }
+
+  async function logQueryResults(
+    grants: NgoGrant[],
+    failedGrants: NgoGrant[],
+    ngoWebId: string,
+  ) {
+    const failedFiles = failedGrants.map((g) => g.emergencyFileUrl);
+    for (const g of grants) {
+      if (!g.emergencyFileUrl) continue;
+      if (failedFiles.includes(g.emergencyFileUrl)) {
+        await logNgoRead(g.emergencyFileUrl, ngoWebId, "Failed");
+      } else {
+        await logNgoRead(g.emergencyFileUrl, ngoWebId, "Success");
+      }
+    }
+  }
+
+  async function viewDetailedFile(fileUrl: string) {
+    if (!webId) return;
+    const newTab = window.open("", "_blank");
+
+    await logNgoRead(fileUrl, webId, "Attempt");
+
+    let status = 0;
+    let text = "";
+    try {
+      const res = await solidFetch(fileUrl);
+      status = res.status;
+      if (res.ok) {
+        text = await res.text();
+      }
+    } catch {
+      status = 0;
+    }
+
+    await logNgoRead(fileUrl, webId, outcomeFromStatus(status), status);
+
+    if (text) {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(blob);
+      if (newTab) {
+        newTab.location.href = blobUrl;
+      } else {
+        window.open(blobUrl, "_blank");
+      }
+    } else {
+      if (newTab) newTab.close();
+      setNgoStatus(`Could not open the file (status ${status}).`);
     }
   }
 
@@ -945,7 +928,9 @@ setEmergencyData((prev) => ({
     [webId: string]: boolean;
   }>({});
 
-  const [ngoViewMap, setNgoViewMap] = useState<Record<string, boolean>>({});
+  const [ngoLogMap, setNgoLogMap] = useState<Record<string, NgoLogSummary>>(
+    {},
+  );
 
   useEffect(() => {
     (async () => {
@@ -1030,8 +1015,11 @@ setEmergencyData((prev) => ({
           console.warn("Error reading emergency access", err);
         }
         try {
-          const viewMap = await loadNgoViewStatusForRefugee(podBaseUrl);
-          setNgoViewMap(viewMap);
+          if (role === "refugee") {
+            await upgradeOldAccessLog(podBaseUrl, merged);
+          }
+          const logMap = await loadNgoLogSummaries(podBaseUrl, merged);
+          setNgoLogMap(logMap);
         } catch (err) {
           console.warn("Error loading NGO access log", err);
         }
@@ -1471,6 +1459,16 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.ngosRemovedFromList);
   };
 
+  async function refreshNgoLog() {
+    if (!podBaseUrl) return;
+    try {
+      const logMap = await loadNgoLogSummaries(podBaseUrl, allNgos);
+      setNgoLogMap(logMap);
+    } catch (err) {
+      console.warn("Error loading NGO access log", err);
+    }
+  }
+
   async function allowAccessToSelectedNGOs() {
     if (!loggedIn || !webId) {
       setStatus("Please log in as a refugee first.");
@@ -1517,6 +1515,7 @@ setEmergencyData((prev) => ({
       }
 
       setNgoAccessMap(updatedMap);
+      await refreshNgoLog();
       setStatus(dashboardTexts.accessGrantedForSelectedNgos);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1537,6 +1536,7 @@ setEmergencyData((prev) => ({
       }
 
       setNgoAccessMap(updatedMap);
+      await refreshNgoLog();
 
       // Only count NGOs that gained access now; one that already had access
       // before this attempt must not be reported as "granted".
@@ -1598,6 +1598,7 @@ setEmergencyData((prev) => ({
       }
 
       setNgoAccessMap(updatedMap);
+      await refreshNgoLog();
       setStatus(dashboardTexts.accessRevoked);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1618,6 +1619,7 @@ setEmergencyData((prev) => ({
       }
 
       setNgoAccessMap(updatedMap);
+      await refreshNgoLog();
 
       const revoked = trustedNgos.filter((ngo) => !updatedMap[ngo]);
       const stillHave = trustedNgos.filter((ngo) => updatedMap[ngo]);
@@ -1804,6 +1806,10 @@ setEmergencyData((prev) => ({
     setNgoQueryError("");
     setIsQueryComplete(false);
 
+    if (webId) {
+      await logQueryAttempts(ngoGrants, webId);
+    }
+
     try {
       const emergencyFileUrls = ngoGrants.map(
         (grant) => grant.emergencyFileUrl,
@@ -1830,7 +1836,7 @@ setEmergencyData((prev) => ({
       }
 
       if (webId) {
-        await logViewsForAllGrants(ngoGrants, webId);
+        await logQueryResults(ngoGrants, failedGrants, webId);
       }
 
       setNgoQueryData([]);
@@ -1838,6 +1844,9 @@ setEmergencyData((prev) => ({
       setChartFieldLabel("Country");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (webId) {
+        await logQueryResults(ngoGrants, ngoGrants, webId);
+      }
       setNgoQueryError(`Query error: ${msg}`);
       setNgoStatus(`Error: ${msg}`);
     } finally {
@@ -1975,6 +1984,9 @@ setEmergencyData((prev) => ({
   const handleExecuteCustomQuery = async () => {
     setCustomQueryLoading(true);
     setCustomQueryError("");
+    if (webId) {
+      await logQueryAttempts(ngoGrants, webId);
+    }
     try {
       const emergencyFileUrls = ngoGrants.map(
         (grant) => grant.emergencyFileUrl,
@@ -1986,6 +1998,15 @@ setEmergencyData((prev) => ({
       );
 
       const enrichedData = attachGrantsBySource(results, ngoGrants);
+
+      if (webId) {
+        const foundFiles = enrichedData.map((row) => row.emergencyFileUrl);
+        for (const g of ngoGrants) {
+          if (g.emergencyFileUrl && foundFiles.includes(g.emergencyFileUrl)) {
+            await logNgoRead(g.emergencyFileUrl, webId, "Success");
+          }
+        }
+      }
 
       setNgoQueryData(enrichedData);
 
@@ -3351,7 +3372,36 @@ setEmergencyData((prev) => ({
                   <h3>{dashboardTexts.selectTrustedNgos}</h3>
                   {allNgos.map((ngo, index) => {
                     const hasAccess = ngoAccessMap[ngo];
-                    const hasViewed = ngoViewMap[ngo];
+                    const logInfo = ngoLogMap[ngo];
+                    const hasViewed =
+                      !!logInfo &&
+                      (logInfo.lastSuccess !== "" || logInfo.oldFormatViewed);
+
+                    const logLines: string[] = [];
+                    if (logInfo) {
+                      if (logInfo.lastSuccess) {
+                        logLines.push(
+                          `${dashboardTexts.lastSuccessfulRead} ${new Date(logInfo.lastSuccess).toLocaleString()}`,
+                        );
+                      } else if (logInfo.oldFormatViewed) {
+                        logLines.push(dashboardTexts.oldRecordResultUnknown);
+                      }
+                      if (logInfo.failedCount > 0) {
+                        logLines.push(
+                          `${dashboardTexts.failedReadAttempts} ${logInfo.failedCount}`,
+                        );
+                      }
+                      if (logInfo.lastGrant) {
+                        logLines.push(
+                          `${dashboardTexts.accessGivenOn} ${new Date(logInfo.lastGrant).toLocaleString()}`,
+                        );
+                      }
+                      if (logInfo.lastRevoke) {
+                        logLines.push(
+                          `${dashboardTexts.accessRemovedOn} ${new Date(logInfo.lastRevoke).toLocaleString()}`,
+                        );
+                      }
+                    }
                     // PR1-1: name of a verified NGO; unverified entries stay
                     // selectable so they can still be revoked or removed.
                     const verifiedName = verifiedNgos?.find(
@@ -3433,6 +3483,15 @@ setEmergencyData((prev) => ({
                                 : dashboardTexts.notVerifiedNgo}
                             </span>
                           )}
+
+                          {logLines.map((line, i) => (
+                            <span
+                              key={i}
+                              style={{ marginTop: 2, fontSize: 12, color: "#555" }}
+                            >
+                              {line}
+                            </span>
+                          ))}
                         </div>
                       </label>
                     );
@@ -4481,18 +4540,9 @@ setEmergencyData((prev) => ({
                               <span>{data.country || "—"}</span>
                               {data.emergencyFileUrl && (
                                 <button
-                                  onClick={async () => {
-                                    if (webId) {
-                                      await logNgoViewFromNgo(
-                                        data.emergencyFileUrl!,
-                                        webId,
-                                      );
-                                    }
-                                    window.open(
-                                      `${data.emergencyFileUrl!}?raw=1`,
-                                      "_blank",
-                                    );
-                                  }}
+                                  onClick={() =>
+                                    viewDetailedFile(data.emergencyFileUrl!)
+                                  }
                                   style={{
                                     marginTop: 4,
                                     padding: "4px 6px",

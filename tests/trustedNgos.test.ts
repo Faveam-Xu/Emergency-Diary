@@ -45,7 +45,7 @@ const OUTSIDER_B = 'https://ml-outsider-b.solidcommunity.net/profile/card#me';
 const REFUGEE_A = 'https://ml-refugee-a.solidcommunity.net/profile/card#me';
 const REFUGEE_POD = 'https://ml-refugee-a.solidcommunity.net/';
 const RECORD = `${REFUGEE_POD}private/emergency.ttl`;
-const ACCESS_LOG = `${REFUGEE_POD}private/ngo-access-log.ttl`;
+const ACCESS_LOG = `${REFUGEE_POD}private/access-log/ml-ngo-n-solidcommunity-net-profile-card-me.ttl`;
 const NO_ACCESS = { read: false, append: false, write: false };
 
 let listResponse: () => Response;

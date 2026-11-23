@@ -21,12 +21,17 @@ import {
 
 import { solidFetch } from "./auth";
 import { type AppLanguage, tr } from "./i18n";
+import {
+  getNgoLogUrl,
+  getOldAccessLogUrl,
+  ensureNgoLogExists,
+  appendLogEntry,
+} from "./accessLog";
 
 const PRIVATE_CONTAINER = "private/";
 const EVIDENCE_CONTAINER = "private/evidence/";
 const EMERGENCY_FILE = "private/emergency.ttl";
 const NGO_INDEX_FILE = "public/refugeesGranted.ttl";
-const ACCESS_LOG_FILE = "private/ngo-access-log.ttl";
 const EX = "https://example.org/ns#";
 
 const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
@@ -65,29 +70,6 @@ function getEvidenceContainerUrl(podBaseUrl: string): string {
 function getNgoIndexFileUrl(ngoPodBase: string): string {
   const base = ensureSlash(ngoPodBase);
   return base + NGO_INDEX_FILE;
-}
-
-function getAccessLogFileUrl(podBaseUrl: string): string {
-  const base = ensureSlash(podBaseUrl);
-  return base + ACCESS_LOG_FILE;
-}
-
-async function ensureAccessLogExists(podBaseUrl: string): Promise<void> {
-  const accessLogUrl = getAccessLogFileUrl(podBaseUrl);
-  try {
-    await getSolidDataset(accessLogUrl, { fetch: solidFetch });
-  } catch {
-    try {
-      const ds = createSolidDataset();
-      await saveSolidDatasetAt(accessLogUrl, ds, { fetch: solidFetch });
-    } catch (createErr) {
-      console.warn(
-        "Could not create access log file:",
-        accessLogUrl,
-        createErr,
-      );
-    }
-  }
 }
 
 async function loadAccessibleResource(resourceUrl: string) {
@@ -510,12 +492,10 @@ export async function grantAccessToSelectedNGOs(
   }
 
   const emergencyFileUrl = getEmergencyFileUrl(refugeePodBase);
-  const accessLogUrl = getAccessLogFileUrl(refugeePodBase);
   const failed: string[] = [];
 
-  await ensureAccessLogExists(refugeePodBase);
-
   for (const ngoWebId of ngoWebIds) {
+    const ngoLogUrl = getNgoLogUrl(refugeePodBase, ngoWebId);
     try {
       await universalAccess.setAgentAccess(
         emergencyFileUrl,
@@ -524,10 +504,11 @@ export async function grantAccessToSelectedNGOs(
         { fetch: solidFetch },
       );
 
+      await ensureNgoLogExists(ngoLogUrl);
       await universalAccess.setAgentAccess(
-        accessLogUrl,
+        ngoLogUrl,
         ngoWebId,
-        { read: true, append: true, write: true },
+        { read: false, append: true, write: false },
         { fetch: solidFetch },
       );
 
@@ -542,6 +523,13 @@ export async function grantAccessToSelectedNGOs(
           emergencyFileUrl,
         );
         console.log("Granted access to NGO", ngoWebId);
+        await appendLogEntry(
+          ngoLogUrl,
+          refugeeWebId,
+          "Grant",
+          "Success",
+          emergencyFileUrl,
+        );
       }
     } catch (e) {
       console.error("Error granting access to NGO", ngoWebId, e);
@@ -549,7 +537,7 @@ export async function grantAccessToSelectedNGOs(
       // A failed grant must not leave any access behind: undo the record,
       // access-log and evidence rules, each on its own so one failure does
       // not skip the rest.
-      for (const url of [emergencyFileUrl, accessLogUrl]) {
+      for (const url of [emergencyFileUrl, ngoLogUrl]) {
         try {
           await universalAccess.setAgentAccess(
             url,
@@ -592,11 +580,11 @@ export async function revokeAccessFromSelectedNGOs(
   refugeeWebId: string,
 ): Promise<void> {
   const emergencyFileUrl = getEmergencyFileUrl(refugeePodBase);
-  const accessLogUrl = getAccessLogFileUrl(refugeePodBase);
-
-  await ensureAccessLogExists(refugeePodBase);
+  const oldLogUrl = getOldAccessLogUrl(refugeePodBase);
 
   for (const ngoWebId of ngoWebIds) {
+    const ngoLogUrl = getNgoLogUrl(refugeePodBase, ngoWebId);
+
     await universalAccess.setAgentAccess(
       emergencyFileUrl,
       ngoWebId,
@@ -608,8 +596,9 @@ export async function revokeAccessFromSelectedNGOs(
       { fetch: solidFetch },
     );
 
+    await ensureNgoLogExists(ngoLogUrl);
     await universalAccess.setAgentAccess(
-      accessLogUrl,
+      ngoLogUrl,
       ngoWebId,
       {
         read: false,
@@ -624,6 +613,25 @@ export async function revokeAccessFromSelectedNGOs(
     } catch (e) {
       console.error("Error revoking evidence access for NGO", ngoWebId, e);
     }
+
+    try {
+      await universalAccess.setAgentAccess(
+        oldLogUrl,
+        ngoWebId,
+        { read: false, append: false, write: false },
+        { fetch: solidFetch },
+      );
+    } catch {
+      console.warn("No old access log to update");
+    }
+
+    await appendLogEntry(
+      ngoLogUrl,
+      refugeeWebId,
+      "Revoke",
+      "Success",
+      emergencyFileUrl,
+    );
 
     const ngoPodBase = getPodBaseFromWebId(ngoWebId);
     if (ngoPodBase) {
