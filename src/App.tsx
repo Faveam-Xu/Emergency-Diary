@@ -3304,6 +3304,7 @@ setEmergencyData((prev) => ({
                         color: "#000000",
                         borderRadius: 4,
                         minHeight: 60,
+                        whiteSpace: "pre-wrap",
                       }}
                     >
                       {status}
