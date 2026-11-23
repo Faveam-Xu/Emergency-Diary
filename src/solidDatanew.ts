@@ -411,7 +411,8 @@ export async function loadNgoListFromUrl(
   try {
     const response = await solidFetch(fileUrl);
     if (!response.ok) {
-      return null;
+      // No list saved yet is an empty list; any other failure is "unknown".
+      return response.status === 404 ? [] : null;
     }
     ttlContent = await response.text();
   } catch {

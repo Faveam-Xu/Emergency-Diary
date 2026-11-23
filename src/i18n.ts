@@ -40,20 +40,10 @@ export const loginStrings = {
     ti: "ኣይኣተኹምን ዘለኹም",
     zh: "您尚未登录。",
   },
-  logInAs: {
-    en: "Log in as:",
-    ti: "ከምዚ እቶ፡",
-    zh: "登录身份：",
-  },
-  btnRefugee: {
-    en: "My Secure Data Place",
-    ti: "ናተይ ውሑስ ማዕኸን መረዳእታ",
-    zh: "我的安全数据空间",
-  },
-  btnNgo: {
-    en: "Support Organisation",
-    ti: "ሓጋዚ ትካል",
-    zh: "救助机构",
+  btnLogin: {
+    en: "Log in",
+    ti: "እቶ", // ti: unverified, needs native-speaker check
+    zh: "登录",
   },
   footer: {
     en: "To ask help, you can store your emergency data in your Solid Pod, and you choose which organisation may access it, to give you support.",
@@ -324,6 +314,37 @@ export const dashboardStrings = {
   },
   addNewNgo: { en: "Add new NGO", ti: "ሓዱሽ ዘይመንግስታዊ ትካል ወስኽ/ኺ", zh: "添加新 NGO" },
   addNgo: { en: "Add NGO", ti: "ዘይመንግስታዊ ትካል ወስኽ", zh: "添加 NGO" },
+  // PR1-1 texts. Tigrinya below is unverified and needs a native-speaker check.
+  chooseVerifiedNgo: {
+    en: "Choose a verified NGO…",
+    ti: "ዝተረጋገጸ ዘይመንግስታዊ ትካል ምረጽ…", // ti: unverified, needs native-speaker check
+    zh: "选择已验证的机构…",
+  },
+  noVerifiedNgos: {
+    en: "No verified NGOs are available right now.",
+    ti: "ሕጂ ዝተረጋገጸ ዘይመንግስታዊ ትካል የለን።", // ti: unverified, needs native-speaker check
+    zh: "目前没有可用的已验证机构。",
+  },
+  allVerifiedNgosAdded: {
+    en: "All verified NGOs are already in your list.",
+    ti: "ኩሎም ዝተረጋገጹ ዘይመንግስታዊ ትካላት ኣብ ዝርዝርካ ኣለዉ።", // ti: unverified, needs native-speaker check
+    zh: "所有已验证的机构都已在您的列表中。",
+  },
+  verifiedNgoListUnavailable: {
+    en: "The list of verified NGOs could not be loaded, so no NGO can be added or granted access right now.",
+    ti: "ዝርዝር ዝተረጋገጹ ዘይመንግስታዊ ትካላት ክጽዓን ኣይከኣለን፣ ስለዚ ሕጂ ዝኾነ ትካል ክውሰኽ ወይ ተበጻሕነት ፍቓድ ክወሃቦ ኣይከኣልን።", // ti: unverified, needs native-speaker check
+    zh: "无法加载已验证机构列表，目前无法添加机构或授予访问权限。",
+  },
+  notVerifiedNgo: {
+    en: "Not verified: you can revoke access or remove it, but not grant access.",
+    ti: "ዘይተረጋገጸ፡ ተበጻሕነት ፍቓድ ክትከልክል ወይ ካብ ዝርዝርካ ከተወግዶ ትኽእል ኢኻ፣ ፍቓድ ግን ክትህቦ ኣይትኽእልን።", // ti: unverified, needs native-speaker check
+    zh: "未验证：您可以撤销其访问权限或将其删除，但不能授予访问权限。",
+  },
+  notVerifiedHasAccess: {
+    en: "Not verified, but still has access from an earlier grant. Consider revoking it.",
+    ti: "ዘይተረጋገጸ፡ ግን ካብ ዝሓለፈ ፍቓድ ተበጻሕነት ኣለዎ። ፍቓዱ ክትከልክል ሕሰብ።", // ti: unverified, needs native-speaker check
+    zh: "未验证，但仍保留之前授予的访问权限。建议撤销。",
+  },
   selectAll: { en: "Select All", ti: "ኩሎም ምረጽ/ጺ", zh: "全选" },
   deselectAll: { en: "Deselect All", ti: "ኩሎም ኣይትምረጽ/ጺ", zh: "取消全选" },
   deleteSelectedNgos: {

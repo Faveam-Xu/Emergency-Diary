@@ -1,3 +1,4 @@
+import { isTrustedNgo, loadTrustedNgos } from "./trustedNgos";
 import {
   universalAccess,
   getSolidDataset,
@@ -481,6 +482,33 @@ export async function grantAccessToSelectedNGOs(
     );
   }
 
+  // PR1-1: grant access only to NGOs on the trusted NGO list. If the list
+  // cannot be loaded, grant to nobody (fail closed). Revoking is not limited,
+  // so access can always be taken back.
+  const trustedNgos = await loadTrustedNgos().catch((err: unknown) => {
+    console.warn("Trusted NGO list unavailable; no access granted.", err);
+    throw new Error(
+      tr(
+        language,
+        "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.",
+        "ተበጻሕነት ፍቓድ ኣይተውሃበን፡ ዝርዝር ዝተረጋገጹ ዘይመንግስታዊ ትካላት ክጽዓን ኣይከኣለን። ደሓር ደጊምካ ፈትን።", // ti: unverified, needs native-speaker check
+        "无法授权：无法加载已验证机构列表。请稍后再试。",
+      ),
+    );
+  });
+
+  const unverified = ngoWebIds.filter((id) => !isTrustedNgo(id, trustedNgos));
+  if (unverified.length > 0) {
+    throw new Error(
+      `${tr(
+        language,
+        "Cannot grant access. These are not verified NGOs:",
+        "ተበጻሕነት ፍቓድ ኣይተውሃበን። እዞም ዝተረጋገጹ ዘይመንግስታዊ ትካላት ኣይኮኑን፡", // ti: unverified, needs native-speaker check
+        "无法授权。以下不是已验证的机构：",
+      )} ${unverified.join(", ")}`,
+    );
+  }
+
   const emergencyFileUrl = getEmergencyFileUrl(refugeePodBase);
   const accessLogUrl = getAccessLogFileUrl(refugeePodBase);
   const failed: string[] = [];
@@ -605,5 +633,27 @@ export async function revokeAccessFromSelectedNGOs(
         console.error("Error removing refugee from NGO index", ngoWebId, e);
       }
     }
+  }
+}
+
+// PR1-1: every agent (other than the owner) that can currently read the
+// emergency record, so the refugee always sees, and can revoke, every NGO with
+// access, even one missing from their saved NGO list or no longer verified.
+export async function getAgentsWithRecordAccess(
+  podBaseUrl: string,
+  ownerWebId: string | null,
+): Promise<string[]> {
+  const fileUrl = getEmergencyFileUrl(podBaseUrl);
+  try {
+    const all = await universalAccess.getAgentAccessAll(fileUrl, {
+      fetch: solidFetch,
+    });
+    if (!all) return [];
+    return Object.entries(all)
+      .filter(([agent, access]) => access.read && agent !== ownerWebId)
+      .map(([agent]) => agent);
+  } catch (err) {
+    console.warn("Could not read who has access to the record", err);
+    return [];
   }
 }
