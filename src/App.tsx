@@ -484,7 +484,7 @@ export default function App() {
   const [language, setLanguage] = useState<AppLanguage>(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem("appLanguage");
-      if (stored === "en" || stored === "ti" || stored === "zh") return stored;
+      if (stored === "en" || stored === "ti") return stored;
     }
     return "en";
   });
@@ -504,7 +504,7 @@ setEmergencyData((prev) => ({
     setStatus(dashboardTexts.gpsObtained);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    setStatus(`${tr(language, "GPS Error", "GPS ጌጋ", "GPS 错误")}: ${msg}`);
+    setStatus(`${tr(language, "GPS Error", "GPS ጌጋ")}: ${msg}`);
   }
 };
   const handleLanguageChange = (lang: AppLanguage) => {
@@ -2249,22 +2249,6 @@ setEmergencyData((prev) => ({
               }}
             >
               ትግርኛ
-            </button>
-            <button
-              type="button"
-              onClick={() => handleLanguageChange("zh")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 4,
-                border:
-                  language === "zh" ? "2px solid #007bff" : "1px solid #ccc",
-                backgroundColor: language === "zh" ? "#007bff" : "#ffffff",
-                color: language === "zh" ? "#ffffff" : "#000000",
-                cursor: "pointer",
-                fontSize: 14,
-              }}
-            >
-              中文
             </button>
           </div>
         </div>

@@ -318,7 +318,6 @@ export async function migrateLegacyPublicData(
         language,
         "Could not finish migrating old public data to private storage. Nothing was deleted; please try again later.",
         "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ምትሕልላፍ ኣይተዓወተን። ዝኾነ ፋይል ኣይተደምሰሰን፣ ደሓር ደጊም ፈትን።",
-        "无法完成将旧公开数据迁移到私有存储。未删除任何文件，请稍后重试。",
       ),
     };
   }
@@ -336,7 +335,6 @@ export async function migrateLegacyPublicData(
           language,
           "Access could not be restored for these NGOs; grant it again if needed:",
           "Access could not be restored for these NGOs; grant it again if needed:", // TODO: Tigrinya translation needed
-          "无法为以下机构恢复访问权限，如有需要请重新授权：",
         ) +
         " " +
         notRegranted.join(", ")
@@ -351,7 +349,6 @@ export async function migrateLegacyPublicData(
           language,
           "Old public data has been migrated to private storage, and some evidence photos have been re-linked to your record.",
           "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ፣ ገለ ኣብ መረጋገጺ ዝነበሩ ስእልታት እውን ምስ መረዳእታኻ ተኣሳሲሮም።",
-          "已将旧数据迁移到私有存储，并重新关联了一些未被记录引用的证据照片。",
         ) + regrantNote,
     };
   }
@@ -364,7 +361,6 @@ export async function migrateLegacyPublicData(
         language,
         "Found evidence photos that weren't linked to your record and added them back.",
         "ምስ መረዳእታኻ ዘይተኣሳሰሩ ናይ መረጋገጺ ስእልታት ተረኽቡ፣ ተመሊሶም ተኣሳሲሮም ኣለዉ።",
-        "发现了未关联到你记录的证据照片，已重新添加。",
       ),
     };
   }
@@ -377,7 +373,6 @@ export async function migrateLegacyPublicData(
         language,
         "Old public data has been migrated to private storage.",
         "ዝሓለፈ ህዝባዊ ዳታ ናብ ውሽጣዊ ኣካል ተሰጋጊሩ ኣሎ።",
-        "已将旧数据迁移到私有存储。",
       ) + regrantNote,
   };
 }
