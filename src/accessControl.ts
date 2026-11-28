@@ -459,7 +459,6 @@ export async function grantAccessToSelectedNGOs(
         language,
         "Cannot grant access. These are not valid NGO WebIDs:",
         "ተበጻሕነት ፍቓድ የለን። እዚ ትኽክለኛ መፍለዩ ዌብ መረዳእታ ዘይመንግስታዊ ትካል ኣይኮነን፡",
-        "无法授权。这些不是有效的 NGO WebID：",
       )} ${invalid.join(", ")}`,
     );
   }
@@ -474,7 +473,6 @@ export async function grantAccessToSelectedNGOs(
         language,
         "Cannot grant access: the list of verified NGOs could not be loaded. Please try again later.",
         "ተበጻሕነት ፍቓድ ኣይተውሃበን፡ ዝርዝር ዝተረጋገጹ ዘይመንግስታዊ ትካላት ክጽዓን ኣይከኣለን። ደሓር ደጊምካ ፈትን።", // ti: unverified, needs native-speaker check
-        "无法授权：无法加载已验证机构列表。请稍后再试。",
       ),
     );
   });
@@ -486,7 +484,6 @@ export async function grantAccessToSelectedNGOs(
         language,
         "Cannot grant access. These are not verified NGOs:",
         "ተበጻሕነት ፍቓድ ኣይተውሃበን። እዞም ዝተረጋገጹ ዘይመንግስታዊ ትካላት ኣይኮኑን፡", // ti: unverified, needs native-speaker check
-        "无法授权。以下不是已验证的机构：",
       )} ${unverified.join(", ")}`,
     );
   }
@@ -563,12 +560,10 @@ export async function grantAccessToSelectedNGOs(
         language,
         "Could not grant access for:",
         "ተበጻሕነት ፍቓድ ኣይተውሃበን ን:",
-        "无法为以下对象授权：",
       )} ${failed.join(", ")}. ${tr(
         language,
         "Check that these WebIDs exist and that the pods are reachable.",
         "እዞም መፍለይ ዌብ ከምዘለዉን እቶም ፖድስ ክርከቡ ዝኽእል ምዃኖምን ኣረጋግጽ።",
-        "请确认这些 WebID 存在，并且 Pod 可以访问。",
       )}`,
     );
   }
