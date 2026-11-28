@@ -1,0 +1,6 @@
+# PR1-4: Content-Security-Policy, report-only for now. Netlify serves this file's
+# headers; `vite preview` sends the same policy (see vite.config.ts).
+# connect-src allows only solidcommunity.net (login and Pods). Add the host of
+# any NGO or refugee Pod on another provider before switching to enforcing mode.
+/*
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' https://solidcommunity.net https://*.solidcommunity.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
