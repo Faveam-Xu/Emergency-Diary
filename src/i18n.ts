@@ -39,6 +39,29 @@ export const loginStrings = {
     en: "Log in",
     ti: "እቶ", // ti: unverified, needs native-speaker check
   },
+  // Consent and disclaimer: English and Tigrinya from
+  // "Consent and Disclaimer Emergency Diary.docx"; Chinese translated from
+  // the English (to be checked by a Chinese speaker).
+  consentTitle: {
+    en: "Consent",
+    ti: "ፍቃድ",
+  },
+  consentText: {
+    en: "By using this application, you agree to share information only if you choose. Your data will stay in your personal Solid Pod storage. Participation is voluntary and will not affect your access to services or support.",
+    ti: "ነዚ ኣፕሊኬሽን እዚ ብምጥቃም ሓበሬታ ክተካፍሉ ምስ እትመርጽ ጥራይ ኢኹም ትሰማምዑ። ሓበሬታኹም ኣብ ውልቃዊ መኽዘን ሶሊድ ፖድ ክዕቀብ እዩ። ተሳትፎ ብወለንታ ዝፍጸም ኮይኑ ኣብዚ ምስታፍ ነቲ ዝነበረ ግልጋሎት ወይ ደገፍ ኣይጸልዎን።",
+  },
+  disclaimerTitle: {
+    en: "Disclaimer",
+    ti: "መተሓሳሰቢ",
+  },
+  disclaimerText: {
+    en: "This application is a research tool, not an official registration or service. It is designed to improve privacy and data control. Using this app does not change your legal status or access to humanitarian aid.",
+    ti: "እዚ ኣፕሊኬሽን እዚ መጽናዕታዊ መሳርሒ እምበር ወግዓዊ ምዝገባ ወይ ግልጋሎት ኣይኮነን። ብሕታዊነትን ምቁጽጻር ሓበሬታን ንምምሕያሽ ዝተዳለወ እዩ። ነዚ ኣፕሊኬሽን ምጥቃም ሕጋዊ ኩነታት ወይ ንሰብኣዊ ሓገዝ ንምርካብ ዝሕግዝ ወይ ዝኽልክል ኣይኮነን።",
+  },
+  consentCheckbox: {
+    en: "I have read and agree to the consent and disclaimer above.",
+    ti: "ነቲ ኣብ ላዕሊ ዘሎ ፍቃድን መተሓሳሰቢን ኣንቢበ ይሰማማዕ እየ።", // ti: unverified, needs native-speaker check
+  },
   footer: {
     en: "To ask help, you can store your emergency data in your Solid Pod, and you choose which organisation may access it, to give you support.",
     ti: "ሓገዝ ንምሕታት ናይ ህጹጽ አዋን ሓበሬታኹም ኣብ ሶሊድ ፖድ ክትዕቅቡን ዝመረጽኩምዎ ትካል ነቲ ሓበሬታኹም ተጠቒሙ ዘድልየኩም ድጋፍ ክህበኩም ፍቓድ ክትህቡ ትኽእሉ ኢኹም።",
