@@ -11,59 +11,63 @@
 @prefix add: <http://example.org/add#> .
 @prefix ex: <http://example.org/ex#> .
 
-###############################
-# CDM - Core Classes
-###############################
+<http://example.org/hds>
+    a owl:Ontology ;
+    rdfs:label "Emergency Diary Common Data Model"@en ;
+    rdfs:comment "The data model of an Emergency Diary record: one record per refugee, stored privately in the refugee's own Solid Pod and readable only by NGOs the refugee grants access to."@en ;
+    owl:versionInfo "Emergency Diary data model used by the app (src/solidDatanew.ts); not aligned to the HDS Centralized Common Data Model."@en .
+
+
+# Core classes
+# A record links one victim (a person or a group), one location and one situation.
 
 hds:Record a owl:Class ;
-    rdfs:label "Record" ;
-    rdfs:comment "A dataset record (data provenance)" ;
+    rdfs:label "Record"@en ;
+    rdfs:comment "An Emergency Diary record: the data a refugee saves about their situation, kept as one file in their Solid Pod."@en ;
     owl:equivalentClass schema:Record, schema:CreativeWork, prov:Entity .
 
 hds:Victim a owl:Class ;
-    rdfs:label "Victim" ;
-    rdfs:comment "Person harmed in an incident." ;
+    rdfs:label "Victim"@en ;
+    rdfs:comment "The person or group the record is about. A group is described by its size and by the nationalities, genders and ages of its members."@en ;
     owl:equivalentClass foaf:Person, schema:Role, gsso:Victim .
 
 hds:Location a owl:Class ;
-    rdfs:label "Location" ;
-    rdfs:comment "A geospatial location" ;
+    rdfs:label "Location"@en ;
+    rdfs:comment "Where the victim is now, from country down to village, optionally with GPS coordinates."@en ;
     owl:equivalentClass schema:Place .
 
 hds:Situation a owl:Class ;
-    rdfs:label "Situation" ;
-    rdfs:comment "A state or condition; more precise than prov:Entity" ;
+    rdfs:label "Situation"@en ;
+    rdfs:comment "The victim's current situation: accommodation, needs, health, visible injuries and captivity."@en ;
     owl:equivalentClass schema:State .
 
-###############################
-# CDM - Object Properties
-###############################
+
+# Object properties
 
 hds:hasVictim a owl:ObjectProperty ;
-    rdfs:label "Has Victim" ;
-    rdfs:comment "Links the record to the victim." ;
+    rdfs:label "has victim"@en ;
+    rdfs:comment "Links a record to the victim it is about."@en ;
     rdfs:domain hds:Record ;
     rdfs:range hds:Victim .
 
 hds:hasLocation a owl:ObjectProperty ;
-    rdfs:label "Has Location" ;
-    rdfs:comment "Links the record to the location." ;
+    rdfs:label "has location"@en ;
+    rdfs:comment "Links a record to the victim's location."@en ;
     rdfs:domain hds:Record ;
     rdfs:range hds:Location .
 
 hds:hasSituation a owl:ObjectProperty ;
-    rdfs:label "Has Situation" ;
-    rdfs:comment "Links the record to the situation." ;
+    rdfs:label "has situation"@en ;
+    rdfs:comment "Links a record to the victim's situation."@en ;
     rdfs:domain hds:Record ;
     rdfs:range hds:Situation .
 
-###############################
-# CDM - Record Properties
-###############################
+
+# Record properties
 
 hds:id a owl:DatatypeProperty ;
-    rdfs:label "ID" ;
-    rdfs:comment "Unique identifier" ;
+    rdfs:label "ID"@en ;
+    rdfs:comment "A unique identifier. The app gives each record an ID of the form REC- followed by a timestamp."@en ;
     owl:equivalentProperty dct:identifier, schema:identifier ;
     rdfs:domain [
         owl:unionOf (
@@ -74,128 +78,146 @@ hds:id a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 hds:updatedAt a owl:DatatypeProperty ;
-    rdfs:label "Updated at" ;
+    rdfs:label "updated at"@en ;
+    rdfs:comment "The date and time the record was last saved."@en ;
     owl:equivalentProperty dct:modified ;
     rdfs:domain hds:Record ;
     rdfs:range xsd:dateTime .
 
-###############################
-# CDM - Victim Properties
-###############################
+
+# Victim properties
+# For a group, number gives its size and the group* properties describe its members.
 
 hds:victimId a owl:DatatypeProperty ;
-    rdfs:label "Victim ID" ;
-    rdfs:comment "Unique identifier for the victim." ;
+    rdfs:label "victim ID"@en ;
+    rdfs:comment "A unique identifier for the victim, of the form VIC- followed by a timestamp."@en ;
     owl:equivalentProperty schema:identifier ;
     owl:equivalentProperty dct:identifier ;
     owl:equivalentProperty ex:victimId .
 
 hds:category a owl:DatatypeProperty ;
+    rdfs:label "category"@en ;
+    rdfs:comment "Whether the record is about one person (Individual) or a group of people (Group)."@en ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator hds:Trafficker) ] ;
     rdfs:range [ owl:oneOf ("Individual" "Group") ] .
 
 hds:number a owl:DatatypeProperty ;
+    rdfs:label "number of persons"@en ;
+    rdfs:comment "The number of people in the group."@en ;
     owl:equivalentProperty schema:quantity ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator) ] ;
     rdfs:range xsd:integer .
 
 hds:nationality a owl:DatatypeProperty ;
+    rdfs:label "nationality"@en ;
+    rdfs:comment "The nationality of the person."@en ;
     owl:equivalentProperty schema:nationality ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Trafficker hds:Perpetrator) ] ;
     rdfs:range [ owl:oneOf ("Sudan" "Eritrea" "Ethiopia" "Uganda" "Kenya" "Libya" "Tunisia" "Chad") ] .
 
 hds:gender a owl:DatatypeProperty ;
+    rdfs:label "gender"@en ;
+    rdfs:comment "The gender of the person, as the person chooses to state it."@en ;
     owl:equivalentProperty schema:gender, ex:gender ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator hds:Trafficker) ] ;
     rdfs:range [owl:oneOf ("Female" "Male" "Other" "Prefer not to say")] .
 
 hds:age a owl:DatatypeProperty ;
+    rdfs:label "age"@en ;
+    rdfs:comment "The age of the person in years."@en ;
     owl:equivalentProperty schema:age, ex:age ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator hds:Trafficker) ] ;
     rdfs:range xsd:integer .
 
 hds:groupNationalities a owl:DatatypeProperty ;
+    rdfs:label "group nationalities"@en ;
+    rdfs:comment "The nationalities of the members of a group. Repeat the property for each nationality."@en ;
     owl:equivalentProperty ex:groupNationalities ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Trafficker hds:Perpetrator) ] ;
     rdfs:range [ owl:oneOf ("Sudan" "Eritrea" "Ethiopia" "Uganda" "Kenya" "Libya" "Tunisia" "Chad") ] .
 
 hds:groupGenders a owl:DatatypeProperty ;
+    rdfs:label "group genders"@en ;
+    rdfs:comment "The genders of the members of a group."@en ;
     owl:equivalentProperty ex:groupGender ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator hds:Trafficker) ] ;
     rdfs:range [owl:oneOf ("Female" "Male" "Other" "Prefer not to say")] .
 
 hds:groupAges a owl:DatatypeProperty ;
+    rdfs:label "group ages"@en ;
+    rdfs:comment "The ages of the members of a group, in years."@en ;
     owl:equivalentProperty ex:groupAge ;
     rdfs:domain [ owl:unionOf (hds:Victim hds:Perpetrator hds:Trafficker) ] ;
     rdfs:range xsd:integer .
 
-###############################
-# CDM - Location Properties
-###############################
+
+# Location properties
+# All location fields are optional except country and type of location.
 
 hds:country a owl:DatatypeProperty ;
-    rdfs:label "Country" ;
-    rdfs:comment "Country where incident occurred." ;
+    rdfs:label "country"@en ;
+    rdfs:comment "The country where the victim is now."@en ;
     owl:equivalentProperty schema:addressCountry ;
     owl:equivalentProperty ex:country .
 
 hds:state a owl:DatatypeProperty ;
-    rdfs:label "State or Region" ;
-    rdfs:comment "State or region where incident occurred." ;
+    rdfs:label "state or region"@en ;
+    rdfs:comment "The state or region where the victim is now."@en ;
     owl:equivalentProperty schema:addressRegion ;
     owl:equivalentProperty ex:state .
 
 hds:town a owl:DatatypeProperty ;
-    rdfs:label "Town / City" ;
-    rdfs:comment "Town or city where incident occurred." ;
+    rdfs:label "town or city"@en ;
+    rdfs:comment "The town or city where the victim is now."@en ;
     owl:equivalentProperty schema:addressLocality ;
     owl:equivalentProperty ex:town .
 
 hds:village a owl:DatatypeProperty ;
-    rdfs:label "Village" ;
-    rdfs:comment "Village where incident occurred." ;
+    rdfs:label "village"@en ;
+    rdfs:comment "The village where the victim is now."@en ;
     # village can be modelled as a place/locality
     owl:equivalentProperty schema:addressLocality ;
     owl:equivalentProperty ex:village .
 
 hds:latitude a owl:DatatypeProperty ;
-    rdfs:label "Latitude" ;
-    rdfs:comment "Latitude coordinate of the location." ;
+    rdfs:label "latitude"@en ;
+    rdfs:comment "The GPS latitude of the location in decimal degrees. Recorded only if the refugee chooses to share their position."@en ;
     owl:equivalentProperty schema:latitude ;
     owl:equivalentProperty ex:latitude ;
     rdfs:range xsd:decimal .
 
 hds:longitude a owl:DatatypeProperty ;
-    rdfs:label "Longitude" ;
-    rdfs:comment "Longitude coordinate of the location." ;
+    rdfs:label "longitude"@en ;
+    rdfs:comment "The GPS longitude of the location in decimal degrees. Recorded only if the refugee chooses to share their position."@en ;
     owl:equivalentProperty schema:longitude ;
     owl:equivalentProperty ex:longitude ;
     rdfs:range xsd:decimal .
 
 hds:locationId a owl:DatatypeProperty ;
-    rdfs:label "Location ID" ;
-    rdfs:comment "Unique identifier for the location." ;
+    rdfs:label "location ID"@en ;
+    rdfs:comment "A unique identifier for the location, of the form LOC- followed by a timestamp."@en ;
     owl:equivalentProperty schema:identifier ;
     owl:equivalentProperty ex:locationId .
 
 hds:locationName a owl:DatatypeProperty ;
-    rdfs:label "Location Name" ;
-    rdfs:comment "Name of the location." ;
+    rdfs:label "location name"@en ;
+    rdfs:comment "The name of the place, for example the name of a camp."@en ;
     owl:equivalentProperty schema:location ;
     owl:equivalentProperty ex:locationName .
 
 hds:locationType a owl:DatatypeProperty ;
-    rdfs:label "Type of Location" ;
-    rdfs:comment "Type of location (Refugee/IDP camp, etc.)." ;
+    rdfs:label "type of location"@en ;
+    rdfs:comment "The kind of place: a refugee or IDP camp, or a human trafficking or smuggling camp."@en ;
     owl:equivalentProperty schema:additionalType ;
     owl:equivalentProperty ex:locationType .
 
-###############################
-# CDM - Situation Properties
-###############################
+
+# Situation properties
+# Contact details, health and trauma are the most sensitive fields of the record.
 
 hds:description a owl:DatatypeProperty ;
-    rdfs:label "Description" ;
+    rdfs:label "description"@en ;
+    rdfs:comment "A free-text description of the current situation."@en ;
     owl:equivalentProperty dct:description, schema:description ;
     rdfs:domain [
         owl:unionOf (
@@ -206,11 +228,15 @@ hds:description a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 hds:accommodation a owl:DatatypeProperty ;
+    rdfs:label "accommodation"@en ;
+    rdfs:comment "The kind of place where the victim is staying."@en ;
     owl:equivalentProperty schema:accommodationCategory, schema:amenityFeature ;
     rdfs:domain hds:Situation ;
     rdfs:range [ owl:oneOf ("Tent" "Appartment" "House") ] .
 
 hds:accommodationNeeds a owl:DatatypeProperty ;
+    rdfs:label "needs"@en ;
+    rdfs:comment "The kinds of help the victim needs. Repeat the property for each need."@en ;
     owl:equivalentProperty schema:requires ;
     rdfs:domain hds:Situation  ;
     rdfs:range [ owl:oneOf (
@@ -220,79 +246,84 @@ hds:accommodationNeeds a owl:DatatypeProperty ;
     ) ] .
 
 hds:needsDescription a owl:DatatypeProperty ;
-    rdfs:label "Description of Needs" ;
-    rdfs:comment "Description of the victim's needs." ;
+    rdfs:label "description of needs"@en ;
+    rdfs:comment "A free-text description of the victim's needs."@en ;
     owl:equivalentProperty ex:needsDescription .
 
 hds:hasTrauma a owl:ObjectProperty ;
-    rdfs:label "Has Trauma" ;
-    rdfs:comment "Links a situation or record to trauma conditions." ;
+    rdfs:label "has trauma"@en ;
+    rdfs:comment "Links a situation to the visible injuries the victim reports. The class hds:Trauma is not yet defined in this model."@en ;
     rdfs:domain hds:Situation ;
     rdfs:range hds:Trauma .
 
 hds:healthStatus a owl:DatatypeProperty ;
-    rdfs:label "Health Condition" ;
-    rdfs:comment "Overall health status of the victim or situation." ;
+    rdfs:label "health condition"@en ;
+    rdfs:comment "A free-text description of the victim's health."@en ;
     rdfs:domain [
         owl:unionOf (hds:Victim hds:Situation)
     ] ;
     rdfs:range xsd:string .
 
 hds:captivityStatus a owl:DatatypeProperty ;
+    rdfs:label "captivity status"@en ;
+    rdfs:comment "Whether the victim is held captive. The app's form records Yes or No, not the values listed in the range."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range [ owl:oneOf ("in captivity" "not in captivity") ] .
 
 hds:CaptivityDetail a owl:DatatypeProperty ;
-    rdfs:label "Captivity Detail" ;
-    rdfs:comment "Detailed description when victim is in captivity." ;
+    rdfs:label "captivity detail"@en ;
+    rdfs:comment "A free-text description of the captivity, if the victim is held captive."@en ;
     rdfs:domain hds:Situation ;
     rdfs:range xsd:string .
 
 hds:helpReasons a owl:DatatypeProperty ;
     rdfs:domain hds:Victim ;
-    rdfs:label "Reasons for Help" ;
-    rdfs:comment "More details about the reasons for help." ;
+    rdfs:label "reasons for help"@en ;
+    rdfs:comment "Why the victim needs help, for example abducted, threatened or extorted. Repeat the property for each reason."@en ;
     owl:equivalentProperty ex:helpReasons .
 
 hds:extraInfo a owl:DatatypeProperty ;
-    rdfs:label "Extra Information" ;
-    rdfs:comment "Extra Information." ;
+    rdfs:label "extra information"@en ;
+    rdfs:comment "Any other information the refugee thinks the NGO should know."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:extraInfo .
 
 
+# Contact properties
+# How an NGO can reach the victim. Never share these without the refugee's consent.
+
 hds:contactPhoneSelf a owl:DatatypeProperty ;
-    rdfs:label "Contact Number" ;
-    rdfs:comment "Personal contact number." ;
+    rdfs:label "contact number"@en ;
+    rdfs:comment "The victim's own phone number."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:contactPhoneSelf .
 
 hds:contactPhoneTrusted a owl:DatatypeProperty ;
-    rdfs:label "Alternative Contact Number" ;
-    rdfs:comment "Contact number of a trusted person." ;
+    rdfs:label "alternative contact number"@en ;
+    rdfs:comment "The phone number of someone who knows the victim."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:contactPhoneTrusted .
 
 hds:contactMessenger a owl:DatatypeProperty ;
-    rdfs:label "Social Media Contact" ;
-    rdfs:comment "Social media contact." ;
+    rdfs:label "messenger contact"@en ;
+    rdfs:comment "A messenger account of the victim, such as WhatsApp or Signal."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:contactMessenger .
 
 hds:contactOtherHandles a owl:DatatypeProperty ;
-    rdfs:label "Other Handles" ;
-    rdfs:comment "Alternative contact handles." ;
+    rdfs:label "other handles"@en ;
+    rdfs:comment "Other social media handles of the victim, such as Instagram or X."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:contactOtherHandles .
 
 hds:contactRequest a owl:DatatypeProperty ;
-    rdfs:label "Request to Contact" ;
-    rdfs:comment "If you want us to help you contact someone" ;
+    rdfs:label "request to contact"@en ;
+    rdfs:comment "Whom the refugee wants the NGO to contact for them, and how."@en ;
     rdfs:domain hds:Victim ;
     rdfs:range xsd:string ;
     owl:equivalentProperty ex:contactRequest .

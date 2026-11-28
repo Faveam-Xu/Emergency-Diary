@@ -114,7 +114,7 @@ type CdmDocs = {
 };
 
 const RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#";
-const CDM_NS = "https://datarefuge.org/cdm-cdm#";
+const CDM_NS = "http://example.org/hds#"; // same namespace as public/cdm_sord.ttl
 
 function buildCdmDocsFromStore(store: $rdf.IndexedFormula): CdmDocs {
   const RDFS_LABEL = $rdf.sym(RDFS_NS + "label");
@@ -174,7 +174,7 @@ function buildCdmDocsFromStore(store: $rdf.IndexedFormula): CdmDocs {
       "contactPhoneSelf",
       "contactPhoneTrusted",
       "contactMessenger",
-      "contactOtherHandle",
+      "contactOtherHandles",
       "contactRequest",
     ].map(getDoc),
   };
