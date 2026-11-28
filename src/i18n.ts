@@ -542,6 +542,23 @@ export const ngoStrings = {
   refugeeWebId: { en: "Refugee WebID:", ti: "Refugee WebID:" },
   emergencyFile: { en: "Emergency file:", ti: "Emergency file:" },
   grantedAt: { en: "Granted at:", ti: "Granted at:" },
+  // TODO: Tigrinya translation needed for the four grant statuses below
+  grantReadable: {
+    en: "✓ Record can be read",
+    ti: "✓ Record can be read",
+  },
+  grantNoAccess: {
+    en: "✗ Failed: no access now (the refugee may have revoked it)",
+    ti: "✗ Failed: no access now (the refugee may have revoked it)",
+  },
+  grantMissing: {
+    en: "✗ Failed: the record was not found",
+    ti: "✗ Failed: the record was not found",
+  },
+  grantCheckFailed: {
+    en: "✗ Failed: the record could not be checked",
+    ti: "✗ Failed: the record could not be checked",
+  },
   cdmDocsTitle: {
     en: "CDM Ontology documentation",
     ti: "CDM Ontology documentation",
