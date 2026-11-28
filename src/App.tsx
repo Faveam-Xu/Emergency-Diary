@@ -25,6 +25,7 @@ import {
   universalAccess,
 } from "@inrupt/solid-client";
 import { solidFetch } from "./auth";
+import { checkGrantReadable, type GrantReadStatus } from "./grantCheck";
 import {
   isTrustedNgo,
   loadTrustedNgos,
@@ -95,6 +96,7 @@ type NgoGrant = {
   refugeeWebId: string;
   emergencyFileUrl: string;
   grantedAt: string;
+  readStatus: GrantReadStatus;
 };
 
 type CdmTermDoc = {
@@ -1762,19 +1764,28 @@ setEmergencyData((prev) => ({
         }
       }
 
-      const grants: NgoGrant[] = Array.from(latestByRefugee.values())
-        .filter((e) => e.kind === "grant" && e.emergencyFileUrl)
-        .map((e) => ({
-          refugeeWebId: e.refugeeWebId,
-          emergencyFileUrl: e.emergencyFileUrl as string,
-          grantedAt: e.at,
-        }));
+      const grants: NgoGrant[] = await Promise.all(
+        Array.from(latestByRefugee.values())
+          .filter((e) => e.kind === "grant" && e.emergencyFileUrl)
+          .map(async (e) => ({
+            refugeeWebId: e.refugeeWebId,
+            emergencyFileUrl: e.emergencyFileUrl as string,
+            grantedAt: e.at,
+            readStatus: await checkGrantReadable(
+              e.emergencyFileUrl as string,
+              solidFetch,
+            ),
+          })),
+      );
 
       if (!grants.length) {
         setNgoStatus("No refugees have granted you access yet.");
       } else {
+        const readable = grants.filter(
+          (g) => g.readStatus === "readable",
+        ).length;
         setNgoStatus(
-          `Found ${grants.length} refugee(s) who granted you access.`,
+          `Found ${grants.length} grant(s) in your inbox; ${readable} record(s) can be read now.`,
         );
       }
 
@@ -3733,6 +3744,22 @@ setEmergencyData((prev) => ({
                       {new Date(grant.grantedAt).toLocaleString()}
                     </div>
                   )}
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontWeight: 600,
+                      color:
+                        grant.readStatus === "readable" ? "#198754" : "#b30059",
+                    }}
+                  >
+                    {grant.readStatus === "readable"
+                      ? ngoTexts.grantReadable
+                      : grant.readStatus === "noAccess"
+                        ? ngoTexts.grantNoAccess
+                        : grant.readStatus === "missing"
+                          ? ngoTexts.grantMissing
+                          : ngoTexts.grantCheckFailed}
+                  </div>
                 </div>
               ))}
             </div>
